@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tarifs — Parcours simplifié (Preview)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f14; --card: #16161d; --border: rgba(255,255,255,0.08);
+    --muted: #9899b3; --fg: #e8e8ed;
+    --violet: #8b5cf6; --purple: #7c3aed; --sky: #4dabf7;
+    --emerald: #22c55e; --amber: #f59e0b;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.5; overflow-x: hidden; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── Navbar ── */
+  .navbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: rgba(15,15,20,0.6); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); }
+  .navbar-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; border-radius: 12px; background: linear-gradient(135deg, #8b5cf6, #4f46e5); display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(139,92,246,0.25); }
+  .logo-text { font-size: 18px; font-weight: 700; background: linear-gradient(to right, #a78bfa, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+  /* ── Hero ── */
+  .hero { text-align: center; padding: 120px 24px 40px; position: relative; }
+  .hero h1 { font-size: clamp(28px, 5vw, 48px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .hero h1 span { background: linear-gradient(135deg, #a78bfa, #c084fc, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { color: var(--muted); font-size: 16px; max-width: 520px; margin: 0 auto; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 999px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); font-size: 13px; font-weight: 500; margin-bottom: 20px; color: var(--muted); }
+  .badge svg { color: var(--violet); }
+
+  /* ── Plans ── */
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1100px; margin: 0 auto 60px; padding: 0 24px; }
+  @media (max-width: 768px) { .plans { grid-template-columns: 1fr; max-width: 400px; } }
+  .plan-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; position: relative; transition: transform 0.2s, border-color 0.2s; }
+  .plan-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.15); }
+  .plan-card.popular { border-color: rgba(139,92,246,0.4); background: linear-gradient(to bottom, rgba(139,92,246,0.06), var(--card)); transform: scale(1.03); z-index: 2; }
+  .plan-card.popular:hover { transform: scale(1.03) translateY(-2px); }
+  .popular-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); padding: 4px 16px; border-radius: 999px; background: linear-gradient(to right, #8b5cf6, #7c3aed); color: white; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 4px 12px rgba(139,92,246,0.4); }
+  .plan-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .plan-icon { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+  .plan-name { font-size: 18px; font-weight: 700; }
+  .plan-desc { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+  .plan-price { margin-bottom: 20px; }
+  .plan-price .amount { font-size: 32px; font-weight: 800; }
+  .plan-price .period { font-size: 14px; color: var(--muted); }
+  .plan-price .free-note { font-size: 12px; color: var(--emerald); font-weight: 500; margin-top: 4px; }
+  .plan-features { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+  .feature-item { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .feature-check { width: 16px; height: 16px; border-radius: 50%; background: rgba(34,197,94,0.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .feature-check svg { color: var(--emerald); }
+  .feature-x { color: rgba(255,255,255,0.15); flex-shrink: 0; }
+
+  /* ── CTA Buttons ── */
+  .btn { width: 100%; padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-primary { background: linear-gradient(to right, #8b5cf6, #7c3aed); color: white; box-shadow: 0 8px 20px rgba(139,92,246,0.25); }
+  .btn-primary:hover { box-shadow: 0 8px 28px rgba(139,92,246,0.4); transform: translateY(-1px); }
+  .btn-secondary { background: rgba(255,255,255,0.05); color: var(--fg); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: rgba(139,92,246,0.4); color: var(--violet); }
+
+  /* ── Parcours actuel vs nouveau ── */
+  .comparison { max-width: 900px; margin: 0 auto 80px; padding: 0 24px; }
+  .comparison h2 { text-align: center; font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  .comparison .subtitle { text-align: center; font-size: 14px; color: var(--muted); margin-bottom: 32px; }
+  .flows { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 768px) { .flows { grid-template-columns: 1fr; } }
+  .flow { border-radius: 16px; padding: 28px; border: 1px solid var(--border); }
+  .flow-old { background: rgba(239,68,68,0.03); border-color: rgba(239,68,68,0.2); }
+  .flow-new { background: rgba(34,197,94,0.03); border-color: rgba(34,197,94,0.2); }
+  .flow-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .flow-old .flow-title { color: #f87171; }
+  .flow-new .flow-title { color: #4ade80; }
+  .flow-steps { display: flex; flex-direction: column; gap: 0; }
+  .flow-step { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; position: relative; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .flow-old .step-num { background: rgba(239,68,68,0.15); color: #f87171; }
+  .flow-new .step-num { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .step-text { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .step-text strong { color: var(--fg); }
+  .step-connector { width: 2px; height: 8px; margin-left: 11px; border-radius: 1px; }
+  .flow-old .step-connector { background: rgba(239,68,68,0.15); }
+  .flow-new .step-connector { background: rgba(34,197,94,0.15); }
+
+  /* ── Modal Overlay ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+  .modal-overlay.active { opacity: 1; pointer-events: auto; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 0; max-width: 480px; width: 100%; transform: translateY(20px) scale(0.97); transition: transform 0.25s; overflow: hidden; }
+  .modal-overlay.active .modal { transform: translateY(0) scale(1); }
+  .modal-header { padding: 28px 28px 0; text-align: center; }
+  .modal-header .plan-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+  .modal-header h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .modal-header p { font-size: 13px; color: var(--muted); }
+  .modal-close { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); transition: all 0.2s; }
+  .modal-close:hover { background: rgba(255,255,255,0.1); color: var(--fg); }
+  .modal-body { padding: 24px 28px 28px; }
+  .modal-tabs { display: flex; gap: 0; margin-bottom: 20px; background: rgba(255,255,255,0.04); border-radius: 10px; padding: 3px; }
+  .modal-tab { flex: 1; padding: 10px; text-align: center; font-size: 13px; font-weight: 600; border-radius: 8px; border: none; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.2s; }
+  .modal-tab.active { background: var(--violet); color: white; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+  .form-input { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 14px; color: var(--fg); outline: none; transition: all 0.2s; font-family: inherit; }
+  .form-input:focus { border-color: var(--violet); background: rgba(255,255,255,0.06); box-shadow: 0 0 20px rgba(139,92,246,0.15); }
+  .form-input::placeholder { color: rgba(152,153,179,0.5); }
+  .modal-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+  .modal-divider::before, .modal-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .modal-divider span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .modal-footer { padding: 0 28px 24px; display: flex; flex-direction: column; gap: 8px; }
+  .price-summary { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 4px; }
+  .price-summary .label { font-size: 13px; font-weight: 600; }
+  .price-summary .price { font-size: 20px; font-weight: 800; }
+  .price-summary .ttc { font-size: 11px; color: var(--muted); margin-left: 4px; }
+  .trust-row { display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 12px; }
+  .trust-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(152,153,179,0.6); }
+  .trust-item svg { width: 12px; height: 12px; }
+
+  /* ── Info banner ── */
+  .info-banner { max-width: 700px; margin: 0 auto 40px; padding: 0 24px; }
+  .info-card { background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.04)); border: 1px solid rgba(139,92,246,0.2); border-radius: 16px; padding: 24px 28px; text-align: center; }
+  .info-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .info-card p { font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .info-card p strong { color: var(--fg); }
+
+  /* Animations */
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .animate { animation: fadeUp 0.5s ease forwards; }
+</style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="navbar-inner">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 12.5 L9.5 16.5 L18.5 6.5"/></svg>
+      </div>
+      <span class="logo-text">Make Your List</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:11px;color:var(--muted);background:rgba(139,92,246,0.1);padding:4px 12px;border-radius:999px;border:1px solid rgba(139,92,246,0.2);font-weight:600;color:var(--violet);">PREVIEW — Parcours simplifié</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="badge">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+    Des tarifs transparents, sans mauvaise surprise
+  </div>
+  <h1>Choisissez le plan <span>qui vous correspond</span></h1>
+  <p>Commencez gratuitement, passez Pro quand vous êtes prêt. <strong style="color:var(--fg)">Aucun engagement.</strong></p>
+</section>
+
+<!-- Plans -->
+<div class="plans">
+  <!-- Free -->
+  <div class="plan-card">
+    <div class="plan-header">
+      <div class="plan-icon" style="background:rgba(152,153,179,0.12);color:var(--muted);">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </div>
+      <span class="plan-name">Free</span>
+    </div>
+    <p class="plan-desc">Parfait pour découvrir Make Your List et organiser vos premières tâches.</p>
+    <div class="plan-price">
+      <span class="amount">0€</span>
+      <div class="free-note">Pour toujours, sans carte bancaire</div>
+    </div>
+    <div class="plan-features">
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>1 projet</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>3 listes de tâches</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Notes illimitées</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>1 tableau Kanban</span></div>
+      <div class="feature-item"><span class="feature-x">✕</span><span style="color:rgba(255,255,255,0.2)">Collaboration</span></div>
+      <div class="feature-item"><span class="feature-x">✕</span><span style="color:rgba(255,255,255,0.2)">Accès API</span></div>
+    </div>
+    <button class="btn btn-secondary" onclick="alert('Redirection vers /inscription')">Commencer gratuitement</button>
+  </div>
+
+  <!-- Étudiant -->
+  <div class="plan-card popular">
+    <div class="popular-badge">Le plus populaire</div>
+    <div class="plan-header">
+      <div class="plan-icon" style="background:rgba(77,171,247,0.15);color:var(--sky);">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+      </div>
+      <span class="plan-name">Étudiant</span>
+    </div>
+    <p class="plan-desc">Toute la puissance de Make Your List au prix d'un café par mois.</p>
+    <div class="plan-price">
+      <span class="amount">2,49€</span><span class="period">/mois</span>
+    </div>
+    <div class="plan-features">
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Jusqu'à 5 projets</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>15 listes de tâches</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>500 Mo de pièces jointes</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Accès API complet</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Jusqu'à 3 membres</span></div>
+    </div>
+    <button class="btn btn-primary" onclick="openModal('student')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      S'abonner — 2,49€/mois
+    </button>
+  </div>
+
+  <!-- Pro -->
+  <div class="plan-card">
+    <div class="plan-header">
+      <div class="plan-icon" style="background:rgba(139,92,246,0.15);color:var(--violet);">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M3 20h18"/></svg>
+      </div>
+      <span class="plan-name">Pro</span>
+    </div>
+    <p class="plan-desc">Pour les freelances et équipes qui veulent tout débloquer, sans limite.</p>
+    <div class="plan-price">
+      <span class="amount">7€</span><span class="period">/mois</span>
+    </div>
+    <div class="plan-features">
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span style="font-weight:600;color:var(--violet)">Tout le plan Étudiant</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Projets & listes illimités</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>5 Go de pièces jointes</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Membres illimités</span></div>
+      <div class="feature-item"><div class="feature-check"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg></div><span>Export & support prioritaire</span></div>
+    </div>
+    <button class="btn btn-secondary" onclick="openModal('pro')" style="border-color:rgba(139,92,246,0.3);color:var(--violet);">S'abonner — 7€/mois</button>
+  </div>
+</div>
+
+<!-- Comparaison parcours -->
+<div class="comparison">
+  <h2>Pourquoi c'est mieux</h2>
+  <p class="subtitle">Le parcours actuel vs. le nouveau parcours simplifié</p>
+  <div class="flows">
+    <!-- Ancien parcours -->
+    <div class="flow flow-old">
+      <div class="flow-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+        Parcours actuel — 6 étapes
+      </div>
+      <div class="flow-steps">
+        <div class="flow-step"><div class="step-num">1</div><div class="step-text"><strong>/tarifs</strong> — L'utilisateur voit les plans</div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">2</div><div class="step-text">Clique "S'abonner" → <strong>redirigé vers /inscription</strong></div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">3</div><div class="step-text">Remplit le formulaire d'inscription</div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">4</div><div class="step-text">Va confirmer son <strong>email dans sa boîte mail</strong></div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">5</div><div class="step-text">Revient, se <strong>reconnecte sur /connexion</strong></div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">6</div><div class="step-text">Redirigé vers <strong>/abonnement</strong> → Stripe</div></div>
+      </div>
+    </div>
+
+    <!-- Nouveau parcours -->
+    <div class="flow flow-new">
+      <div class="flow-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+        Nouveau parcours — 3 étapes
+      </div>
+      <div class="flow-steps">
+        <div class="flow-step"><div class="step-num">1</div><div class="step-text"><strong>/tarifs</strong> — L'utilisateur voit les plans et clique "S'abonner"</div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">2</div><div class="step-text"><strong>Modale s'ouvre</strong> sur la même page — inscription ou connexion rapide</div></div>
+        <div class="step-connector"></div>
+        <div class="flow-step"><div class="step-num">3</div><div class="step-text">Soumission → <strong>direct vers Stripe</strong> pour le paiement</div></div>
+      </div>
+      <div style="margin-top:16px;padding:12px 14px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.15);border-radius:10px;font-size:12px;color:var(--emerald);">
+        <strong>Résultat :</strong> L'utilisateur ne quitte jamais la page tarifs. Moins de friction = plus de conversions.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Info -->
+<div class="info-banner">
+  <div class="info-card">
+    <h3>Comment ça marche concrètement ?</h3>
+    <p>
+      Quand un visiteur non connecté clique <strong>"S'abonner"</strong>, une <strong>modale s'ouvre directement</strong> sur la page tarifs.<br>
+      Il peut s'inscrire ou se connecter <strong>sans quitter la page</strong>.<br>
+      Une fois authentifié, il est <strong>immédiatement redirigé vers Stripe</strong> pour finaliser le paiement.<br><br>
+      <strong>Note :</strong> La confirmation d'email reste obligatoire pour des raisons de sécurité, mais elle peut se faire <em>après</em> le paiement — l'utilisateur n'est pas bloqué.
+    </p>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" style="position:relative;">
+    <button class="modal-close" onclick="closeModal()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+    <div class="modal-header">
+      <div class="plan-badge" id="modalBadge" style="background:rgba(77,171,247,0.12);color:var(--sky);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        <span id="modalPlanName">Plan Étudiant</span>
+      </div>
+      <h2>Dernière étape</h2>
+      <p>Créez votre compte pour accéder au paiement sécurisé</p>
+    </div>
+    <div class="modal-body">
+      <div class="modal-tabs">
+        <button class="modal-tab active" onclick="switchTab('signup')">S'inscrire</button>
+        <button class="modal-tab" onclick="switchTab('login')">Se connecter</button>
+      </div>
+      <div id="signupFields">
+        <div class="form-group">
+          <label class="form-label">Nom</label>
+          <input type="text" class="form-input" placeholder="Votre nom" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" placeholder="vous@exemple.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <input type="password" class="form-input" placeholder="••••••••" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="price-summary">
+        <span class="label">Total aujourd'hui</span>
+        <div><span class="price" id="modalPrice">2,49€</span><span class="ttc">TTC</span></div>
+      </div>
+      <button class="btn btn-primary" onclick="alert('→ Inscription/Connexion puis redirection Stripe\n\nEn prod : supabase.auth.signUp() puis fetch(create-checkout)')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        S'inscrire et payer
+      </button>
+      <div class="trust-row">
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          SSL Stripe
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Sans engagement
+        </div>
+        <div class="trust-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Accès immédiat
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const plans = {
+    student: { name: 'Plan Étudiant', price: '2,49€', color: 'var(--sky)', bg: 'rgba(77,171,247,0.12)', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>' },
+    pro: { name: 'Plan Pro', price: '7€', color: 'var(--violet)', bg: 'rgba(139,92,246,0.12)', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7z"/><path d="M3 20h18"/></svg>' },
+  };
+
+  function openModal(planId) {
+    const plan = plans[planId];
+    const badge = document.getElementById('modalBadge');
+    badge.style.background = plan.bg;
+    badge.style.color = plan.color;
+    badge.innerHTML = plan.icon + '<span>' + plan.name + '</span>';
+    document.getElementById('modalPrice').textContent = plan.price;
+    document.getElementById('modalOverlay').classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('active');
+    document.body.style.overflow = '';
+  }
+
+  function switchTab(tab) {
+    const tabs = document.querySelectorAll('.modal-tab');
+    tabs[0].classList.toggle('active', tab === 'signup');
+    tabs[1].classList.toggle('active', tab === 'login');
+    document.getElementById('signupFields').style.display = tab === 'signup' ? 'block' : 'none';
+  }
+
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+</script>
+
+</body>
+</html>

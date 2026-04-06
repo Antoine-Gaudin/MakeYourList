@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Allow: /decouvrir
+Allow: /tarifs
+Allow: /fonctionnalite/
+Allow: /connexion
+Allow: /inscription
+
+Disallow: /share/
+
+Sitemap: https://workspace-todo.vercel.app/sitemap.xml
