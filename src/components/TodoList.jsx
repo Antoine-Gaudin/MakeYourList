@@ -904,7 +904,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
           {/* Section label */}
           {!currentFolderId && visibleFolders.length > 0 && <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4"><FileText size={12} /> Listes</p>}
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-5 relative" ref={browserGridRef}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5 relative" ref={browserGridRef}>
             {lassoRect && (
               <div className="fixed border border-violet-500/50 bg-violet-500/10 rounded-sm pointer-events-none z-50" style={{ left: lassoRect.x, top: lassoRect.y, width: lassoRect.w, height: lassoRect.h }} />
             )}

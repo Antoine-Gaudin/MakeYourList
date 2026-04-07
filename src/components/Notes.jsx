@@ -718,7 +718,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
             </div>
           )}
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-5 relative" ref={gridRef}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-5 relative" ref={gridRef}>
             {/* Lasso rectangle */}
             {lassoRect && (
               <div className="fixed border border-violet-500/50 bg-violet-500/10 rounded-sm pointer-events-none z-50" style={{ left: lassoRect.x, top: lassoRect.y, width: lassoRect.w, height: lassoRect.h }} />
