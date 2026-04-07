@@ -389,7 +389,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-background app-ambient overflow-hidden">
+    <div className="flex h-[100dvh] bg-background app-ambient overflow-hidden">
       <div className="app-ambient-orb" />
       {/* Mobile hamburger */}
       <button
@@ -401,8 +401,8 @@ function App() {
 
       {/* Sidebar */}
       <nav className={cn(
-        "w-[260px] h-screen sidebar-bg border-r border-border flex flex-col shrink-0 z-50 sticky top-0",
-        "max-md:fixed max-md:top-0 max-md:h-screen max-md:w-[280px] max-md:transition-all max-md:duration-200 max-md:ease-out",
+        "w-[260px] h-[100dvh] sidebar-bg border-r border-border flex flex-col shrink-0 z-50 sticky top-0",
+        "max-md:fixed max-md:top-0 max-md:h-[100dvh] max-md:w-[280px] max-md:transition-all max-md:duration-200 max-md:ease-out",
         mobileMenuOpen ? "max-md:left-0 max-md:shadow-2xl" : "max-md:-left-[280px]"
       )}>
         {/* Sidebar header - project selector */}
@@ -938,7 +938,7 @@ function App() {
 
       {/* Toast notifications */}
       {toasts.length > 0 && (
-        <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-3 pointer-events-none">
+        <div className="fixed right-4 max-sm:right-2 max-sm:left-2 z-[200] flex flex-col gap-3 pointer-events-none" style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
           {toasts.map(toast => {
             const icons = {
               success: <Check size={16} />,
@@ -962,7 +962,7 @@ function App() {
               <div
                 key={toast.id}
                 className={cn(
-                  "pointer-events-auto min-w-[320px] max-w-[420px] rounded-xl border border-border overflow-hidden shadow-2xl shadow-black/30",
+                  "pointer-events-auto w-full sm:min-w-[320px] sm:max-w-[420px] rounded-xl border border-border overflow-hidden shadow-2xl shadow-black/30",
                   "bg-card/80 backdrop-blur-xl",
                   toast.exiting ? 'toast-exit' : 'toast-enter'
                 )}

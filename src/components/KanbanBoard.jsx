@@ -961,7 +961,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                       </div>
 
                       {/* Context menu button */}
-                      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                         <div className="relative">
                           <button className="flex items-center justify-center w-7 h-7 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-lg text-muted-foreground cursor-pointer hover:text-foreground transition-all duration-150"
                             onClick={(e) => { e.stopPropagation(); setCardMenu(cardMenu === `board-${b.id}` ? null : `board-${b.id}`) }}>
@@ -1032,7 +1032,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2 px-3.5 py-2 bg-input border border-white/10 rounded-xl text-muted-foreground transition-all duration-150 focus-within:border-violet-500/50 focus-within:shadow-[0_0_20px_rgba(139,92,246,0.15)]">
               <Search size={14} />
-              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher..." className="bg-transparent border-none text-foreground text-sm outline-none w-36" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher..." className="bg-transparent border-none text-foreground text-sm outline-none w-24 sm:w-36" />
               {search && <button className="flex bg-transparent border-none text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setSearch('')}><X size={13} /></button>}
             </div>
             <div className="flex gap-0.5 bg-muted/60 rounded-xl p-0.5 border border-white/10">
@@ -1047,7 +1047,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
 
             {/* Export menu */}
             <div className="relative shrink-0">
-              <button className="flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground" onClick={() => setShowKanbanExportMenu(!showKanbanExportMenu)} title="Exporter"><Download size={13} /> Export</button>
+              <button className="flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground" onClick={() => setShowKanbanExportMenu(!showKanbanExportMenu)} title="Exporter"><Download size={13} /> <span className="hidden sm:inline">Export</span></button>
               {showKanbanExportMenu && (
                 <div className="absolute right-0 top-full mt-1 w-52 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 animate-scale-in py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
                   <button className="flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none text-foreground cursor-pointer text-xs text-left hover:bg-accent transition-colors" onClick={() => { exportKanbanHtml(); setShowKanbanExportMenu(false) }}>
@@ -1070,7 +1070,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
             <div className="relative shrink-0">
               <button className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs cursor-pointer transition-all duration-150", shareUrl ? "text-emerald-400 border-emerald-500/30" : "text-muted-foreground hover:text-foreground")} onClick={handleShareKanban} title="Partager un lien">
                 {shareLoading ? <span className="animate-spin block w-3.5 h-3.5 border-2 border-muted-foreground/30 border-t-primary rounded-full" /> : shareCopied ? <Check size={13} /> : <Share2 size={13} />}
-                Partager
+                <span className="hidden sm:inline">Partager</span>
               </button>
               {showSharePopup && shareUrl && (
                 <div className="absolute right-0 top-full mt-1 w-64 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl p-3 z-50 animate-scale-in" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
@@ -1085,7 +1085,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
             </div>
 
             <button className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground", compact && "bg-violet-500/15 text-violet-400 border-violet-500/30")}
-              onClick={() => setCompact(!compact)}>{compact ? <Eye size={13} /> : <EyeOff size={13} />} {compact ? 'Detaille' : 'Compact'}</button>
+              onClick={() => setCompact(!compact)}>{compact ? <Eye size={13} /> : <EyeOff size={13} />} <span className="hidden sm:inline">{compact ? 'Detaille' : 'Compact'}</span></button>
           </div>
 
           {showFilters && (
@@ -1235,7 +1235,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                                 )}
                                 {compact && <div className="flex items-center gap-1.5 mt-1"><span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio?.color }} />{todo.starred && <Star size={9} className="text-warning fill-warning" />}{todo.dueDate && <Calendar size={9} className={cn(overdue ? "text-destructive" : "text-muted-foreground/60")} />}{subtasks.length > 0 && <span className="text-[0.6rem] text-muted-foreground">{subsDone}/{subtasks.length}</span>}</div>}
                               </div>
-                              <div className="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
+                              <div className="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 shrink-0">
                                 <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/50 cursor-pointer rounded-md hover:bg-muted hover:text-foreground transition-all duration-150" onClick={e => { e.stopPropagation(); setCardMenu(cardMenu === menuId ? null : menuId) }}><MoreHorizontal size={13} /></button>
                                 <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/30 cursor-pointer rounded-md hover:text-destructive hover:bg-destructive/10 transition-all duration-150" onClick={e => { e.stopPropagation(); deleteTask(todo.id) }}><Trash2 size={11} /></button>
                               </div>
@@ -1302,7 +1302,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                               <span className="block text-[0.82rem] font-medium leading-snug break-words mt-1">{note.title || 'Sans titre'}</span>
                               {!compact && note.content && <p className="text-[0.7rem] text-muted-foreground/60 leading-snug mt-1 line-clamp-2">{note.content.slice(0, 100)}</p>}
                             </div>
-                            <div className="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
+                            <div className="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 shrink-0">
                               <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/50 cursor-pointer rounded-md hover:bg-muted hover:text-foreground transition-all duration-150" onClick={e => { e.stopPropagation(); setCardMenu(cardMenu === menuId ? null : menuId) }}><MoreHorizontal size={13} /></button>
                               <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/30 cursor-pointer rounded-md hover:text-destructive hover:bg-destructive/10 transition-all duration-150" onClick={e => { e.stopPropagation(); deleteNote(note.id) }}><Trash2 size={11} /></button>
                             </div>

@@ -572,7 +572,7 @@ export default function PricingPage({ onNavigate }) {
         </div>
 
         {/* ── CTA bottom ── */}
-        <div className="relative z-10 text-center rounded-2xl border border-violet-500/25 overflow-hidden p-10">
+        <div className="relative z-10 text-center rounded-2xl border border-violet-500/25 overflow-hidden p-6 md:p-10">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 via-pink-500/5 to-amber-500/5 pointer-events-none" />
           <div className="relative">
             <h2 className="text-2xl md:text-3xl font-bold mb-3">Prêt à <span className="animated-gradient-text">transformer votre productivité</span> ?</h2>

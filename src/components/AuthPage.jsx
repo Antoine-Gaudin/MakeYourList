@@ -7,7 +7,7 @@ import {
   CheckSquare, StickyNote, Columns3, Share2, Zap, Shield, Code2,
   Star, Layers, FolderKanban, ChevronRight, Play, ArrowDown,
   Rocket, Globe, MousePointerClick, TrendingUp, Clock, Heart, Check, Download,
-  Smartphone
+  Smartphone, Menu, X
 } from 'lucide-react'
 import PricingPage from './PricingPage'
 import FeaturesPage from './FeaturesPage'
@@ -67,6 +67,10 @@ export default function AuthPage() {
     const { outcome } = await prompt.userChoice
     if (outcome === 'accepted') { window.__pwaInstallPrompt = null; setCanInstall(false) }
   }
+
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  // Fermer le menu mobile à chaque changement de page
+  useEffect(() => { setMobileNavOpen(false) }, [location.pathname])
 
   const userDisplayName = profile?.display_name || user?.email?.split('@')[0] || ''
   const avatarUrl = profile?.avatar_url
@@ -153,22 +157,24 @@ export default function AuthPage() {
 
       {/* ═══ NAVBAR ═══ */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/60 backdrop-blur-xl border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 no-underline" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 12.5 L9.5 16.5 L18.5 6.5"/></svg>
             </div>
             <span className="text-lg font-bold bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">Make Your List</span>
           </Link>
-          <div className="flex items-center gap-3">
+
+          {/* Desktop nav links */}
+          <div className="hidden sm:flex items-center gap-3">
             <Link to="/decouvrir" className={`px-4 py-2 text-sm font-medium no-underline transition-colors ${page === 'features' || page.startsWith('feature-') ? 'text-violet-400' : 'text-muted-foreground hover:text-foreground'}`}>Découvrir</Link>
             <Link to="/tarifs" className={`px-4 py-2 text-sm font-medium no-underline transition-colors ${page === 'pricing' ? 'text-violet-400' : 'text-muted-foreground hover:text-foreground'}`}>Tarifs</Link>
             {user ? (
               <>
                 <Link to="/taches" className="px-4 py-2 text-sm font-medium no-underline text-muted-foreground hover:text-foreground transition-colors">Mon app</Link>
                 <div className="flex items-center gap-2.5 pl-2 border-l border-white/10">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
                       {userDisplayName.charAt(0).toUpperCase()}
@@ -184,7 +190,58 @@ export default function AuthPage() {
               </>
             )}
           </div>
+
+          {/* Mobile: avatar (si connecté) + hamburger */}
+          <div className="flex sm:hidden items-center gap-3">
+            {user && profile?.avatar_url && (
+              <img src={profile.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
+            )}
+            <button
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/[0.06] border border-white/10 text-foreground cursor-pointer"
+              onClick={() => setMobileNavOpen(!mobileNavOpen)}
+              aria-label="Menu"
+            >
+              {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile menu dropdown */}
+        {mobileNavOpen && (
+          <div className="sm:hidden border-t border-white/5 bg-background/95 backdrop-blur-xl">
+            <div className="px-4 py-4 flex flex-col gap-1">
+              <Link to="/decouvrir" className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium no-underline transition-colors ${page === 'features' || page.startsWith('feature-') ? 'bg-violet-500/15 text-violet-400' : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'}`} onClick={() => setMobileNavOpen(false)}>
+                <Layers size={16} /> Découvrir
+              </Link>
+              <Link to="/tarifs" className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium no-underline transition-colors ${page === 'pricing' ? 'bg-violet-500/15 text-violet-400' : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'}`} onClick={() => setMobileNavOpen(false)}>
+                <Zap size={16} /> Tarifs
+              </Link>
+              {user ? (
+                <>
+                  <Link to="/taches" className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium no-underline text-muted-foreground hover:bg-white/[0.06] hover:text-foreground transition-colors" onClick={() => setMobileNavOpen(false)}>
+                    <CheckSquare size={16} /> Mon application
+                  </Link>
+                  <div className="mt-2 pt-3 border-t border-white/10 flex items-center gap-3 px-4 py-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                      {userDisplayName.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium text-foreground truncate">{userDisplayName}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="h-px bg-white/10 my-1" />
+                  <Link to="/connexion" className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium no-underline transition-colors ${page === 'login' ? 'bg-violet-500/15 text-violet-400' : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'}`} onClick={() => setMobileNavOpen(false)}>
+                    <Mail size={16} /> Connexion
+                  </Link>
+                  <Link to="/inscription" className="flex items-center justify-center gap-2 px-4 py-3 mt-1 bg-gradient-to-r from-violet-500 to-purple-600 text-white no-underline rounded-xl text-sm font-semibold shadow-lg shadow-violet-500/25" onClick={() => setMobileNavOpen(false)}>
+                    <Rocket size={16} /> Commencer gratuitement
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </nav>
 
       {page === 'features' && <div className="pt-16"><FeaturesPage onNavigate={(p) => { if (p === 'pricing') setPage('pricing'); else if (p === 'features') setPage('features'); else if (p === 'projects') setPage('projects'); else { setPage('landing'); } }} /></div>}
@@ -303,7 +360,7 @@ export default function AuthPage() {
       {page === 'landing' && (
       <>
       {/* ═══ HERO ═══ */}
-      <section className="relative pt-32 pb-24 px-6 overflow-hidden noise-overlay">
+      <section className="relative pt-20 pb-16 md:pt-32 md:pb-24 px-6 overflow-hidden noise-overlay">
         <div className="aurora-bg"><div className="aurora-orb" /></div>
         <div className="grid-pattern absolute inset-0 pointer-events-none" />
 
@@ -418,7 +475,7 @@ export default function AuthPage() {
       </section>
 
       {/* ═══ APPLICATION MOBILE ═══ */}
-      <section className="py-28 px-6 relative">
+      <section className="py-16 md:py-28 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-500/[0.03] to-transparent pointer-events-none" />
         <div className="max-w-6xl mx-auto relative z-10">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
@@ -486,7 +543,7 @@ export default function AuthPage() {
       </section>
 
       {/* ═══ FEATURES ═══ */}
-      <section id="features" className="py-28 px-6 relative spotlight noise-overlay">
+      <section id="features" className="py-16 md:py-28 px-6 relative spotlight noise-overlay">
         <div className="aurora-bg" style={{ opacity: 0.5 }}><div className="aurora-orb" /></div>
         <div className="max-w-6xl mx-auto relative z-10">
           <div className="text-center mb-16">
@@ -511,10 +568,10 @@ export default function AuthPage() {
       </section>
 
       {/* ═══ KANBAN SHOWCASE ═══ */}
-      <section className="py-28 px-6 relative">
+      <section className="py-16 md:py-28 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-500/[0.04] via-transparent to-transparent pointer-events-none" />
         <div className="max-w-6xl mx-auto relative z-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-blue-400 text-xs font-semibold mb-5"><Columns3 size={12} /> VUE KANBAN</div>
               <h2 className="text-3xl md:text-4xl font-extrabold mb-5">Votre workflow, <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">enfin visible</span></h2>
@@ -554,10 +611,10 @@ export default function AuthPage() {
       </section>
 
       {/* ═══ COLLAB SHOWCASE ═══ */}
-      <section className="py-28 px-6 relative">
+      <section className="py-16 md:py-28 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-amber-500/[0.03] to-transparent pointer-events-none" />
         <div className="max-w-6xl mx-auto relative z-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div className="order-2 lg:order-1 relative float-slow" style={{ animationDelay: '1s' }}>
               <div className="absolute -inset-6 bg-gradient-to-br from-amber-500/20 to-orange-500/15 rounded-3xl blur-3xl" />
               <div className="glow-border glow-border-always relative z-10">
@@ -596,7 +653,7 @@ export default function AuthPage() {
       </section>
 
       {/* ═══ TRUST STRIP ═══ */}
-      <section className="py-24 px-6 relative spotlight">
+      <section className="py-14 md:py-24 px-6 relative spotlight">
         <div className="absolute inset-0 border-y border-white/6 pointer-events-none" />
         <div className="aurora-bg" style={{ opacity: 0.4 }}><div className="aurora-orb" /></div>
         <div className="max-w-5xl mx-auto relative z-10">
@@ -623,7 +680,7 @@ export default function AuthPage() {
       </section>
 
       {/* ═══ CTA FINAL ═══ */}
-      <section className="py-28 px-6 relative noise-overlay">
+      <section className="py-16 md:py-28 px-6 relative noise-overlay">
         <div className="aurora-bg"><div className="aurora-orb" /></div>
         <div className="max-w-4xl mx-auto relative z-10 text-center">
           <h2 className="text-3xl md:text-5xl font-extrabold mb-4">Prêt à <span className="animated-gradient-text">passer au niveau supérieur</span> ?</h2>
