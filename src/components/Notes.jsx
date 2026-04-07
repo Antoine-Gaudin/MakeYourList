@@ -542,6 +542,38 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
     document.execCommand(command, false, value)
     debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
   }
+  // Wrap current selection with a span carrying an inline style (font-size, font-family, ...)
+  const applyInlineStyle = (styleProp, value) => {
+    restoreSelection()
+    editorRef.current?.focus()
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    const span = document.createElement('span')
+    span.style[styleProp] = value
+    if (range.collapsed) {
+      // No text selected: insert a zero-width span so future typing inherits the style
+      span.appendChild(document.createTextNode('\u200B'))
+      range.insertNode(span)
+      const newRange = document.createRange()
+      newRange.setStart(span.firstChild, 1)
+      newRange.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(newRange)
+    } else {
+      try {
+        span.appendChild(range.extractContents())
+        range.insertNode(span)
+        const newRange = document.createRange()
+        newRange.selectNodeContents(span)
+        sel.removeAllRanges()
+        sel.addRange(newRange)
+      } catch (err) {
+        console.error('applyInlineStyle failed:', err)
+      }
+    }
+    debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
+  }
   const setWritingColor = (color) => {
     activeColorRef.current = color
     restoreSelection()
@@ -913,18 +945,37 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
 
               <div className="w-px h-5 bg-white/10 mx-1" />
 
-              {/* Font size */}
-              <select onMouseDown={e => { e.stopPropagation(); saveSelection() }} onChange={e => { execFormat('fontSize', e.target.value); e.target.value = '' }} defaultValue="" title="Taille" className="px-1.5 py-0.5 bg-input border border-white/10 rounded text-[0.65rem] text-muted-foreground outline-none cursor-pointer w-14">
+              {/* Font size — real px values */}
+              <select onMouseDown={e => { e.stopPropagation(); saveSelection() }} onChange={e => { applyInlineStyle('fontSize', e.target.value); e.target.value = '' }} defaultValue="" title="Taille" className="px-1.5 py-0.5 bg-input border border-white/10 rounded text-[0.65rem] text-muted-foreground outline-none cursor-pointer w-14">
                 <option value="" disabled>Taille</option>
-                <option value="1">Petit</option>
-                <option value="3">Normal</option>
-                <option value="5">Grand</option>
-                <option value="7">Très grand</option>
+                <option value="10px">10</option>
+                <option value="12px">12</option>
+                <option value="14px">14</option>
+                <option value="16px">16</option>
+                <option value="18px">18</option>
+                <option value="20px">20</option>
+                <option value="24px">24</option>
+                <option value="28px">28</option>
+                <option value="32px">32</option>
+                <option value="40px">40</option>
               </select>
 
-              {/* Headings */}
-              <select onMouseDown={e => { e.stopPropagation(); saveSelection() }} onChange={e => { execFormat('formatBlock', e.target.value); e.target.value = '' }} defaultValue="" title="Style" className="px-1.5 py-0.5 bg-input border border-white/10 rounded text-[0.65rem] text-muted-foreground outline-none cursor-pointer w-20 ml-0.5">
-                <option value="" disabled>Style</option>
+              {/* Font family */}
+              <select onMouseDown={e => { e.stopPropagation(); saveSelection() }} onChange={e => { applyInlineStyle('fontFamily', e.target.value); e.target.value = '' }} defaultValue="" title="Police" className="px-1.5 py-0.5 bg-input border border-white/10 rounded text-[0.65rem] text-muted-foreground outline-none cursor-pointer w-20 ml-0.5">
+                <option value="" disabled>Police</option>
+                <option value="Inter, system-ui, sans-serif">Sans-serif</option>
+                <option value="Georgia, 'Times New Roman', serif">Serif</option>
+                <option value="'JetBrains Mono', Consolas, monospace">Mono</option>
+                <option value="'Playfair Display', Georgia, serif">Élégant</option>
+                <option value="'Poppins', sans-serif">Moderne</option>
+                <option value="'Caveat', cursive">Manuscrit</option>
+                <option value="'Merriweather', Georgia, serif">Classique</option>
+                <option value="'Roboto Condensed', sans-serif">Compact</option>
+              </select>
+
+              {/* Block style (paragraph / headings / quote) */}
+              <select onMouseDown={e => { e.stopPropagation(); saveSelection() }} onChange={e => { execFormat('formatBlock', e.target.value); e.target.value = '' }} defaultValue="" title="Bloc" className="px-1.5 py-0.5 bg-input border border-white/10 rounded text-[0.65rem] text-muted-foreground outline-none cursor-pointer w-16 ml-0.5">
+                <option value="" disabled>Bloc</option>
                 <option value="p">Normal</option>
                 <option value="h1">Titre 1</option>
                 <option value="h2">Titre 2</option>

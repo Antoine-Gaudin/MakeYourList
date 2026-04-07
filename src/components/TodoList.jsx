@@ -3,7 +3,8 @@ import {
   Plus, Trash2, Search, Calendar, X, Tag, Check, Circle, GripVertical,
   List, Clock, FileText, AlertCircle, Star, StarOff,
   LayoutList, Columns3, Link2, ChevronRight, MoreHorizontal, ArrowRight, ArrowLeft,
-  Sparkles, Eye, EyeOff, Paperclip, File, Image, Upload, Folder, FolderPlus, Copy, Move
+  Sparkles, Eye, EyeOff, Paperclip, File, Image, Upload, Folder, FolderPlus, Copy, Move,
+  Download, Share2
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useProject } from '../contexts/ProjectContext'
@@ -39,7 +40,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
   todoFolders = [], setTodoFolders, dbAddFolder, dbDeleteFolder,
   urlListId, urlTaskId, onNavigate, showUpgradeModal }) {
   const { myRole } = useProject()
-  const { limits } = useSubscription()
+  const { limits, isFree } = useSubscription()
   const canEdit = myRole === 'owner' || myRole === 'editor'
   const atListLimit = limits.lists && lists.length >= limits.lists
   const [activeListId, setActiveListId] = useState(null)
@@ -81,6 +82,11 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
   const [kanbanCardMenu, setKanbanCardMenu] = useState(null) // task id
   const [lastDroppedId, setLastDroppedId] = useState(null)
   const [kanbanCompact, setKanbanCompact] = useState(false)
+  const [showListExportMenu, setShowListExportMenu] = useState(false)
+  const [shareUrl, setShareUrl] = useState(null)
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [showSharePopup, setShowSharePopup] = useState(false)
   const inputRef = useRef(null)
   const kanbanAddRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -297,6 +303,371 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
     if (task) { updateTask(taskId, { status: newStatus }); if (newStatus === 'done') logActivity('task_done', `Tache "${task.text}" terminee`) }
     setKanbanCardMenu(null)
   }
+
+  // === List export & share ===
+  const STATUS_EXPORT = { todo: { label: 'A faire', symbol: '○', color: '#a78bfa' }, doing: { label: 'En cours', symbol: '◐', color: '#60a5fa' }, done: { label: 'Terminée', symbol: '●', color: '#4ade80' } }
+  const PRIO_EXPORT = { low: { label: 'Basse', color: '#4ade80' }, medium: { label: 'Moyenne', color: '#facc15' }, high: { label: 'Haute', color: '#f87171' } }
+
+  const buildListExportHtml = (list, tasksList, forPrint = false) => {
+    const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const doneCount = tasksList.filter(t => t.status === 'done').length
+    const doingCount = tasksList.filter(t => t.status === 'doing').length
+    const todoCount = tasksList.filter(t => t.status === 'todo').length
+    const pct = tasksList.length > 0 ? Math.round((doneCount / tasksList.length) * 100) : 0
+    const printOverride = forPrint ? `
+      body { background: #fff !important; color: #1a1a1a !important; }
+      .card { background: #f8fafc !important; border-color: #e2e8f0 !important; }
+      .card::before { display: none; }
+      h1.title { color: #0f172a !important; }
+      .meta, .stat-label { color: #64748b !important; }
+      .stat-value { color: #0f172a !important; }
+      .progress-track { background: #e2e8f0 !important; }
+      .task-text { color: #1e293b !important; }
+      .task-note { color: #94a3b8 !important; }
+      .subtask-text { color: #475569 !important; }
+      .footer { color: #94a3b8 !important; border-color: #e2e8f0 !important; }
+      .footer a { color: #6d28d9 !important; }
+      .section-bg { background: transparent !important; }
+    ` : ''
+
+    const tasksHtml = tasksList.map((t, i) => {
+      const statusConfig = t.status === 'done' ? { color: '#10b981', bg: '#10b98112', icon: '&#10003;', label: 'Terminée' } : t.status === 'doing' ? { color: '#3b82f6', bg: '#3b82f612', icon: '&#9684;', label: 'En cours' } : { color: '#8b5cf6', bg: '#8b5cf612', icon: '&#9711;', label: 'À faire' }
+      const prioConfig = t.priority === 'high' ? { color: '#ef4444', label: 'Haute' } : t.priority === 'low' ? { color: '#22c55e', label: 'Basse' } : null
+      const subtasks = t.subtasks || []
+      const subsDone = subtasks.filter(s => s.done).length
+      const tags = t.tags || []
+      const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date(new Date().toDateString())
+
+      const subtasksHtml = subtasks.length > 0 ? `
+        <div class="subtasks-section">
+          ${subtasks.map(s => `
+            <div class="subtask">
+              <span class="subtask-check" style="color:${s.done ? '#10b981' : '#475569'}">${s.done ? '&#10003;' : '&#9711;'}</span>
+              <span class="subtask-text" ${s.done ? 'style="text-decoration:line-through;opacity:0.45"' : ''}>${s.text}</span>
+            </div>
+          `).join('')}
+        </div>` : ''
+
+      const tagsHtml = tags.length > 0 ? tags.map(tag => `<span class="tag">${tag}</span>`).join('') : ''
+      const dueDateHtml = t.dueDate ? `<span class="badge-date${isOverdue ? ' overdue' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${new Date(t.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>` : ''
+      const prioHtml = prioConfig ? `<span class="badge-prio" style="background:${prioConfig.color}14;color:${prioConfig.color}">${prioConfig.label}</span>` : ''
+      const notesHtml = t.notes ? `<p class="task-note">${t.notes}</p>` : ''
+      const subsProgress = subtasks.length > 0 ? `<span class="badge-subs"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>${subsDone}/${subtasks.length}<span class="sub-bar"><span class="sub-fill" style="width:${(subsDone/subtasks.length)*100}%"></span></span></span>` : ''
+
+      return `
+      <div class="task" style="border-left-color:${statusConfig.color}40;animation-delay:${i * 40}ms">
+        <div class="task-row">
+          <div class="status-circle" style="background:${statusConfig.bg};border-color:${statusConfig.color}40;color:${statusConfig.color}">${statusConfig.icon}</div>
+          <div class="task-body">
+            <div class="task-title-row">
+              <span class="task-text${t.status === 'done' ? ' done' : ''}">${t.text}</span>
+              ${t.starred ? '<span class="star">★</span>' : ''}
+            </div>
+            <div class="task-badges">${prioHtml}${dueDateHtml}${tagsHtml}${subsProgress}</div>
+            ${notesHtml}
+            ${subtasksHtml}
+          </div>
+        </div>
+      </div>`
+    }).join('')
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${list.name || 'Liste'} — Make Your List</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #09090b;
+    color: #e4e4e7;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .page { max-width: 760px; margin: 0 auto; padding: 56px 36px 40px; }
+
+  /* Header */
+  .header { margin-bottom: 40px; }
+  .badge-brand {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 14px; border-radius: 20px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    background: linear-gradient(135deg, #7c3aed20, #8b5cf615);
+    color: #a78bfa; text-decoration: none;
+    border: 1px solid #7c3aed25; margin-bottom: 20px;
+  }
+  .badge-brand::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #8b5cf6; box-shadow: 0 0 8px #8b5cf680; }
+  h1.title {
+    font-size: 32px; font-weight: 800; color: #fafafa;
+    letter-spacing: -0.8px; margin-bottom: 16px; line-height: 1.2;
+  }
+
+  /* Stats */
+  .stats-row {
+    display: flex; align-items: center; gap: 20px;
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .stat-big { display: flex; align-items: baseline; gap: 6px; }
+  .stat-value { font-size: 28px; font-weight: 800; color: #fafafa; }
+  .stat-label { font-size: 13px; color: #71717a; font-weight: 500; }
+  .stat-pills { display: flex; gap: 10px; }
+  .stat-pill {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: #a1a1aa; font-weight: 500;
+  }
+  .stat-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* Progress */
+  .progress-track {
+    width: 100%; height: 10px; background: #18181b;
+    border-radius: 10px; overflow: hidden; position: relative;
+    border: 1px solid #27272a;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 10px;
+    background: linear-gradient(90deg, #7c3aed, #8b5cf6, #a78bfa);
+    transition: width 0.5s ease;
+    position: relative;
+  }
+  .progress-fill::after {
+    content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 20px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2));
+    border-radius: 0 10px 10px 0;
+  }
+  .progress-doing {
+    height: 100%; position: absolute; top: 0; border-radius: 10px;
+    background: #3b82f640;
+  }
+
+  .divider { height: 1px; background: linear-gradient(90deg, transparent, #27272a, transparent); margin: 28px 0 32px; }
+
+  /* Tasks */
+  .task {
+    padding: 16px 18px; margin-bottom: 10px;
+    border: 1px solid #ffffff0a; border-left: 3px solid;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.005));
+    transition: all 0.15s;
+  }
+  .task:hover { border-color: #ffffff15; background: rgba(255,255,255,0.035); }
+  .task-row { display: flex; gap: 14px; align-items: flex-start; }
+  .status-circle {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid; font-size: 13px; flex-shrink: 0; margin-top: 1px;
+  }
+  .task-body { flex: 1; min-width: 0; }
+  .task-title-row { display: flex; align-items: flex-start; gap: 8px; }
+  .task-text {
+    font-size: 14.5px; font-weight: 600; color: #e4e4e7;
+    flex: 1; line-height: 1.5;
+  }
+  .task-text.done { text-decoration: line-through; opacity: 0.38; }
+  .star { color: #facc15; font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+  .task-badges { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .badge-prio, .badge-date, .badge-subs, .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 600; padding: 3px 9px;
+    border-radius: 8px;
+  }
+  .badge-date { background: #ffffff0a; color: #a1a1aa; }
+  .badge-date.overdue { background: #ef444418; color: #f87171; }
+  .badge-subs { background: #ffffff0a; color: #a1a1aa; }
+  .sub-bar { display: inline-block; width: 36px; height: 4px; background: #ffffff15; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-left: 2px; }
+  .sub-fill { display: block; height: 100%; background: #4ade8090; border-radius: 4px; }
+  .tag { background: #8b5cf612; color: #a78bfa; }
+
+  .task-note {
+    margin-top: 8px; font-size: 12px; color: #52525b;
+    font-style: italic; line-height: 1.6;
+  }
+
+  .subtasks-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #ffffff08; }
+  .subtask { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .subtask-check { font-size: 12px; flex-shrink: 0; }
+  .subtask-text { font-size: 12.5px; color: #a1a1aa; }
+
+  .footer {
+    margin-top: 48px; padding-top: 20px;
+    border-top: 1px solid #ffffff08;
+    text-align: center; font-size: 11px; color: #3f3f46;
+  }
+  .footer a { color: #8b5cf6; text-decoration: none; font-weight: 600; }
+
+  @media (prefers-color-scheme: light) {
+    body { background: #fafafa; color: #1a1a1a; }
+    h1.title { color: #0f172a; }
+    .stat-value { color: #0f172a; }
+    .meta, .stat-label, .stat-pill { color: #64748b; }
+    .progress-track { background: #e2e8f0; border-color: #e2e8f0; }
+    .divider { background: linear-gradient(90deg, transparent, #e2e8f0, transparent); }
+    .task { border-color: #e2e8f020; background: #f8fafc; }
+    .task:hover { background: #f1f5f9; }
+    .task-text { color: #1e293b; }
+    .task-note { color: #94a3b8; }
+    .subtask-text { color: #475569; }
+    .footer { border-color: #e2e8f0; color: #94a3b8; }
+  }
+  @media print {
+    body { background: white; color: #1a1a1a; }
+    .task { page-break-inside: avoid; border-color: #e5e7eb; background: #fafafa; }
+    .progress-track { border-color: #e5e7eb; background: #f1f5f9; }
+    h1.title { color: #111; }
+    .footer { color: #aaa; }
+  }
+  ${printOverride}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <a href="${window.location.origin}" class="badge-brand">MAKE YOUR LIST</a>
+    <h1 class="title">${list.name || 'Sans titre'}</h1>
+    <div class="stats-row">
+      <div class="stat-big">
+        <span class="stat-value">${pct}%</span>
+        <span class="stat-label">complétée</span>
+      </div>
+      <div class="stat-pills">
+        <span class="stat-pill"><span class="stat-dot" style="background:#8b5cf6"></span>${todoCount} à faire</span>
+        <span class="stat-pill"><span class="stat-dot" style="background:#3b82f6"></span>${doingCount} en cours</span>
+        <span class="stat-pill"><span class="stat-dot" style="background:#10b981"></span>${doneCount} terminée${doneCount > 1 ? 's' : ''}</span>
+      </div>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" style="width:${pct}%"></div>
+      ${doingCount > 0 ? `<div class="progress-doing" style="left:${pct}%;width:${Math.round((doingCount / tasksList.length) * 100)}%"></div>` : ''}
+    </div>
+  </div>
+  <div class="divider"></div>
+  ${tasksHtml || '<p style="text-align:center;color:#52525b;padding:40px">Liste vide</p>'}
+  <div class="footer">Exportée le ${date} depuis <a href="${window.location.origin}">Make Your List</a></div>
+</div>
+</body>
+</html>`
+  }
+
+  const exportListHtml = () => {
+    if (!activeList) return
+    const html = buildListExportHtml(activeList, todos)
+    const b = new Blob([html], { type: 'text/html' })
+    const u = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = u; a.download = `${activeList.name || 'liste'}.html`; a.click()
+    URL.revokeObjectURL(u)
+  }
+
+  const exportListPdf = () => {
+    if (isFree || !activeList) return
+    const html = buildListExportHtml(activeList, todos, true)
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:800px;height:600px;'
+    document.body.appendChild(iframe)
+    iframe.contentDocument.open()
+    iframe.contentDocument.write(html)
+    iframe.contentDocument.close()
+    iframe.onload = () => { iframe.contentWindow.print(); setTimeout(() => document.body.removeChild(iframe), 1000) }
+  }
+
+  const exportListWord = () => {
+    if (isFree || !activeList) return
+    const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const doneCount = todos.filter(t => t.status === 'done').length
+    const pct = todos.length > 0 ? Math.round((doneCount / todos.length) * 100) : 0
+
+    const tasksWordHtml = todos.map(t => {
+      const statusConfig = t.status === 'done' ? { color: '#10b981', symbol: '✓', label: 'Terminée' } : t.status === 'doing' ? { color: '#3b82f6', symbol: '◐', label: 'En cours' } : { color: '#8b5cf6', symbol: '○', label: 'À faire' }
+      const subtasks = t.subtasks || []
+      const tags = t.tags || []
+      const prioLabel = t.priority === 'high' ? ' · Priorité haute' : t.priority === 'low' ? ' · Priorité basse' : ''
+      const dueStr = t.dueDate ? ` · ${new Date(t.dueDate).toLocaleDateString('fr-FR')}` : ''
+      const tagsStr = tags.length > 0 ? ` · ${tags.join(', ')}` : ''
+
+      const subtasksHtml = subtasks.length > 0 ? `
+        <table style="margin:4px 0 8px 36px;border-collapse:collapse;">
+          ${subtasks.map(s => `
+            <tr>
+              <td style="width:18px;padding:2px 0;vertical-align:top;font-size:10pt;color:${s.done ? '#10b981' : '#999'}">${s.done ? '✓' : '○'}</td>
+              <td style="padding:2px 0;font-size:10pt;color:${s.done ? '#999' : '#333'};${s.done ? 'text-decoration:line-through;' : ''}">${s.text}</td>
+            </tr>
+          `).join('')}
+        </table>` : ''
+
+      const notesHtml = t.notes ? `<p style="margin:2px 0 4px 36px;font-size:9pt;color:#888;font-style:italic;">${t.notes}</p>` : ''
+
+      return `
+        <table style="width:100%;margin-bottom:12px;border-collapse:collapse;">
+          <tr>
+            <td style="width:28px;vertical-align:top;padding-top:4px;">
+              <span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:${statusConfig.color}15;border:2px solid ${statusConfig.color}60;text-align:center;line-height:18px;font-size:11pt;color:${statusConfig.color}">${statusConfig.symbol}</span>
+            </td>
+            <td style="padding:2px 0;">
+              <p style="margin:0;font-size:11pt;font-weight:bold;color:#222;${t.status === 'done' ? 'text-decoration:line-through;color:#999;' : ''}">${t.text}${t.starred ? ' ★' : ''}</p>
+              <p style="margin:2px 0 0;font-size:8.5pt;color:#999;">${statusConfig.label}${prioLabel}${dueStr}${tagsStr}</p>
+            </td>
+          </tr>
+        </table>
+        ${notesHtml}
+        ${subtasksHtml}`
+    }).join('\n')
+
+    const wordHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${activeList.name || 'Liste'}</title>
+<style>
+  body { font-family: Calibri, Arial, sans-serif; color: #1a1a1a; line-height: 1.5; padding: 48px; }
+  .header { margin-bottom: 28px; padding-bottom: 16px; border-bottom: 2px solid #8b5cf6; }
+  h1.title { font-size: 28pt; color: #111; margin-bottom: 6px; letter-spacing: -0.5px; }
+  .meta { font-size: 10pt; color: #888; }
+  .progress { margin: 12px 0 0; }
+  .progress-label { font-size: 9pt; color: #666; margin-bottom: 4px; }
+  .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 8pt; color: #aaa; text-align: center; }
+</style></head>
+<body>
+  <div class="header">
+    <p style="font-size:9pt;font-weight:bold;color:#8b5cf6;letter-spacing:1px;margin-bottom:10px;">MAKE YOUR LIST</p>
+    <h1 class="title">${activeList.name || 'Sans titre'}</h1>
+    <div class="meta">${doneCount}/${todos.length} terminée${todos.length > 1 ? 's' : ''} · ${pct}% · Exportée le ${date}</div>
+  </div>
+  ${tasksWordHtml}
+  <div class="footer">Exporté depuis Make Your List</div>
+</body></html>`
+    const b = new Blob(['\ufeff' + wordHtml], { type: 'application/msword' })
+    const u = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = u; a.download = `${activeList.name || 'liste'}.doc`; a.click()
+    URL.revokeObjectURL(u)
+  }
+
+  const handleShareList = async () => {
+    if (!activeList || shareLoading) return
+    if (shareUrl) {
+      navigator.clipboard.writeText(shareUrl)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+      return
+    }
+    setShareLoading(true)
+    const token = await createShareLink('list', activeList.id)
+    if (token) {
+      const url = `${window.location.origin}/share/${token}`
+      setShareUrl(url)
+      setShowSharePopup(true)
+      navigator.clipboard.writeText(url)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+      logActivity('share_link', `Lien de partage cree pour la liste "${activeList.name}"`)
+    }
+    setShareLoading(false)
+  }
+
+  // Reset share state when changing list
+  useEffect(() => { setShareUrl(null); setShowSharePopup(false); setShareCopied(false); setShowListExportMenu(false) }, [activeListId])
 
   const filtered = todos.filter(t => { if (filterStatus !== 'all' && t.status !== filterStatus) return false; if (search) { const q = search.toLowerCase(); return t.text.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q) || (t.tags || []).some(tag => tag.toLowerCase().includes(q)) }; return true })
   const counts = { all: todos.length, todo: todos.filter(t => t.status === 'todo').length, doing: todos.filter(t => t.status === 'doing').length, done: todos.filter(t => t.status === 'done').length }
@@ -748,6 +1119,44 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
               </div>
             )
           })()}
+
+          {/* Export menu */}
+          <div className="relative shrink-0">
+            <button className="p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground hover:bg-white/[0.06] transition-all" onClick={() => setShowListExportMenu(!showListExportMenu)} title="Exporter"><Download size={14} /></button>
+            {showListExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 animate-scale-in py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                <button className="flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none text-foreground cursor-pointer text-xs text-left hover:bg-accent transition-colors" onClick={() => { exportListHtml(); setShowListExportMenu(false) }}>
+                  <span className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0"><FileText size={13} /></span>
+                  <div><div className="font-medium">HTML</div><div className="text-[0.6rem] text-muted-foreground">Gratuit — page web stylée</div></div>
+                </button>
+                <button className={cn("flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none cursor-pointer text-xs text-left transition-colors", isFree ? "text-muted-foreground/50 cursor-not-allowed" : "text-foreground hover:bg-accent")} onClick={() => { if (!isFree) { exportListPdf(); setShowListExportMenu(false) } }}>
+                  <span className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0", isFree ? "bg-white/5 text-muted-foreground/30" : "bg-red-500/15 text-red-400")}><FileText size={13} /></span>
+                  <div><div className="font-medium flex items-center gap-1.5">PDF {isFree && <span className="text-[0.55rem] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 font-semibold">ÉTUDIANT+</span>}</div><div className="text-[0.6rem] text-muted-foreground">Impression / enregistrer en PDF</div></div>
+                </button>
+                <button className={cn("flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none cursor-pointer text-xs text-left transition-colors", isFree ? "text-muted-foreground/50 cursor-not-allowed" : "text-foreground hover:bg-accent")} onClick={() => { if (!isFree) { exportListWord(); setShowListExportMenu(false) } }}>
+                  <span className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0", isFree ? "bg-white/5 text-muted-foreground/30" : "bg-blue-500/15 text-blue-400")}><FileText size={13} /></span>
+                  <div><div className="font-medium flex items-center gap-1.5">Word {isFree && <span className="text-[0.55rem] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 font-semibold">ÉTUDIANT+</span>}</div><div className="text-[0.6rem] text-muted-foreground">Document .doc compatible Word</div></div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Share button */}
+          <div className="relative shrink-0">
+            <button className={cn("p-1.5 bg-transparent border-none cursor-pointer rounded-lg transition-all hover:bg-white/[0.06]", shareUrl ? "text-emerald-400" : "text-muted-foreground hover:text-foreground")} onClick={handleShareList} title="Partager un lien">
+              {shareLoading ? <span className="animate-spin block w-3.5 h-3.5 border-2 border-muted-foreground/30 border-t-primary rounded-full" /> : shareCopied ? <Check size={14} /> : <Share2 size={14} />}
+            </button>
+            {showSharePopup && shareUrl && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl p-3 z-50 animate-scale-in" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                <div className="text-[0.65rem] font-semibold text-muted-foreground mb-2">Lien de partage</div>
+                <div className="flex items-center gap-2">
+                  <input type="text" readOnly value={shareUrl} className="flex-1 px-2 py-1.5 bg-input border border-white/10 rounded-lg text-[0.65rem] text-foreground outline-none min-w-0" onClick={e => e.target.select()} />
+                  <button className="px-2.5 py-1.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white border-none rounded-lg text-[0.65rem] font-semibold cursor-pointer shadow-sm" onClick={() => { navigator.clipboard.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000) }}>{shareCopied ? '✓ Copié' : 'Copier'}</button>
+                </div>
+                <button className="mt-2 text-[0.6rem] text-muted-foreground/60 bg-transparent border-none cursor-pointer hover:text-foreground transition-colors" onClick={() => setShowSharePopup(false)}>Fermer</button>
+              </div>
+            )}
+          </div>
 
           {/* View toggle */}
           <div className="flex gap-0.5 bg-muted/60 rounded-xl p-1 border border-white/10 shrink-0">

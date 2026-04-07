@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { StickyNote, FileText, Columns3, CheckSquare, Circle, Check, Clock, Star, Link2, ArrowLeft, Edit3, Eye, Save, Calendar } from 'lucide-react'
+import { StickyNote, FileText, Columns3, CheckSquare, Circle, Check, Clock, Star, Link2, ArrowLeft, Edit3, Eye, Save, Calendar, Paperclip, File, Image } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { PRIORITIES, TAG_COLORS } from '../lib/constants'
 import Loader from './Loader'
@@ -8,11 +8,23 @@ import Loader from './Loader'
 const STATUS_ICONS = { todo: Circle, doing: Clock, done: Check }
 const PRIORITY_COLORS = { low: '#51cf66', medium: '#ffd43b', high: '#ff6b6b', urgent: '#e03131' }
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' o'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' Mo'
+}
+
+function getFileIcon(fileType) {
+  if (fileType?.startsWith('image/')) return <Image size={14} className="text-emerald-400" />
+  return <File size={14} className="text-blue-400" />
+}
+
 export default function SharedItemView({ item, onBack }) {
   const [liveData, setLiveData] = useState(item.item)
   const [tasks, setTasks] = useState([])
   const [notes, setNotes] = useState([])
   const [lists, setLists] = useState([])
+  const [attachments, setAttachments] = useState([])
   const [loading, setLoading] = useState(true)
   const isEditor = item.role === 'editor'
   const TYPE_LABELS = { note: 'Note partagée', list: 'Liste partagée', kanban: 'Kanban partagé' }
@@ -24,6 +36,13 @@ export default function SharedItemView({ item, onBack }) {
       if (item.item_type === 'note') {
         const { data } = await supabase.from('notes').select('*').eq('id', item.item_id).single()
         if (data) setLiveData(data)
+        const { data: atts } = await supabase
+          .from('attachments')
+          .select('id, file_name, file_size, file_type, storage_path')
+          .eq('item_type', 'note')
+          .eq('item_id', item.item_id)
+          .order('created_at', { ascending: false })
+        setAttachments(atts || [])
       } else if (item.item_type === 'list') {
         const { data: list } = await supabase.from('lists').select('*').eq('id', item.item_id).single()
         if (list) setLiveData(list)
@@ -84,7 +103,7 @@ export default function SharedItemView({ item, onBack }) {
         <SharedKanbanContent board={liveData} tasks={tasks} notes={notes} lists={lists} />
       ) : (
         <div className="flex-1 overflow-y-auto px-6 py-8">
-          {item.item_type === 'note' && <SharedNoteContent note={liveData} isEditor={isEditor} />}
+          {item.item_type === 'note' && <SharedNoteContent note={liveData} isEditor={isEditor} attachments={attachments} />}
           {item.item_type === 'list' && <SharedListContent list={liveData} tasks={tasks} isEditor={isEditor} />}
         </div>
       )}
@@ -92,7 +111,7 @@ export default function SharedItemView({ item, onBack }) {
   )
 }
 
-function SharedNoteContent({ note, isEditor }) {
+function SharedNoteContent({ note, isEditor, attachments = [] }) {
   const dateStr = (note.updated_at || note.updatedAt)
     ? new Date(note.updated_at || note.updatedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null
@@ -112,6 +131,32 @@ function SharedNoteContent({ note, isEditor }) {
         className="text-[0.92rem] leading-[1.8] text-foreground/85 [&>h1]:text-2xl [&>h1]:font-bold [&>h1]:text-foreground [&>h1]:mt-8 [&>h1]:mb-3 [&>h2]:text-xl [&>h2]:font-semibold [&>h2]:text-foreground [&>h2]:mt-6 [&>h2]:mb-2 [&>h3]:text-lg [&>h3]:font-semibold [&>h3]:text-foreground/90 [&>h3]:mt-5 [&>h3]:mb-2 [&>p]:mb-3 [&>ul]:pl-6 [&>ul]:list-disc [&>ul]:my-3 [&>ol]:pl-6 [&>ol]:list-decimal [&>ol]:my-3 [&_li]:my-1 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-3 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:text-muted-foreground [&_blockquote]:italic [&_code]:bg-white/[0.06] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_code]:font-mono [&_pre]:bg-white/[0.04] [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-xl [&_pre]:p-4 [&_pre]:overflow-x-auto [&_pre]:my-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0"
         dangerouslySetInnerHTML={{ __html: note.content || '' }}
       />
+      {attachments.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-white/10">
+          <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
+            <Paperclip size={13} className="text-amber-400" />
+            <span className="font-semibold text-amber-400">{attachments.length} pièce{attachments.length > 1 ? 's' : ''} jointe{attachments.length > 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {attachments.map(att => {
+              const url = supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl
+              return (
+                <a
+                  key={att.id}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[0.72rem] font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors no-underline"
+                >
+                  {getFileIcon(att.file_type)}
+                  <span className="truncate max-w-[160px]">{att.file_name}</span>
+                  <span className="text-[0.58rem] text-muted-foreground/60">{formatFileSize(att.file_size)}</span>
+                </a>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -5,7 +5,7 @@ import {
   Search, Filter, StickyNote,
   AlertCircle, CheckSquare, Edit3,
   FolderOpen, FolderPlus, Folder, ChevronRight, Import, ListChecks,
-  ArrowLeft, LayoutGrid, Link2, Unlink
+  ArrowLeft, LayoutGrid, Link2, Unlink, Download, Share2, FileText
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import ShareButton from './ShareButton'
@@ -32,7 +32,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   kanbanFolders, dbAddFolder, dbDeleteFolder,
   createShareLink, logActivity,
   urlBoardId, onNavigate, showUpgradeModal, showToast }) {
-  const { canCreateKanbanBoard, plan, limits } = useSubscription()
+  const { canCreateKanbanBoard, plan, limits, isFree } = useSubscription()
   const { myRole } = useProject()
   const canEdit = myRole === 'owner' || myRole === 'editor'
   // Folder navigation state
@@ -62,6 +62,11 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const [cardMenu, setCardMenu] = useState(null)
   const [lastDroppedId, setLastDroppedId] = useState(null)
   const [compact, setCompact] = useState(false)
+  const [showKanbanExportMenu, setShowKanbanExportMenu] = useState(false)
+  const [shareUrl, setShareUrl] = useState(null)
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [showSharePopup, setShowSharePopup] = useState(false)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('all')
   const [filterList, setFilterList] = useState('all')
@@ -462,6 +467,313 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const doneItems = doneTasks + kanbanNotes.filter(n => n.kanbanStatus === 'done').length
   const pct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0
 
+  // === Kanban Export / Share ===
+  const buildKanbanExportHtml = (board, cols, forPrint = false) => {
+    const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const printOverride = forPrint ? `
+      body { background: #fff !important; color: #1a1a1a !important; }
+      .col-card { background: #f8fafc !important; border-color: #e2e8f0 !important; }
+      h1.title { color: #0f172a !important; }
+      .meta, .stat-label { color: #64748b !important; }
+      .stat-value { color: #0f172a !important; }
+      .progress-track { background: #e2e8f0 !important; }
+      .item-card { background: #fff !important; border-color: #e2e8f0 !important; }
+      .item-text { color: #1e293b !important; }
+      .footer { color: #94a3b8 !important; border-color: #e2e8f0 !important; }
+      .footer a { color: #6d28d9 !important; }
+    ` : ''
+
+    const colsHtml = cols.map(col => {
+      const colTasks = kanbanTasks.filter(t => {
+        const cId = BUILTIN_STATUS[col.id] ? (t.status === col.id ? col.id : null) : (t.kanbanColumn === col.id ? col.id : null)
+        return cId === col.id
+      })
+      const colNotes = kanbanNotes.filter(n => {
+        if (BUILTIN_STATUS[col.id]) return n.kanbanStatus === col.id
+        return n.kanbanColumn === col.id
+      })
+      const colCount = colTasks.length + colNotes.length
+
+      const itemsHtml = [
+        ...colTasks.map(t => {
+          const prioConfig = t.priority === 'high' ? { color: '#ef4444', label: 'Haute' } : t.priority === 'low' ? { color: '#22c55e', label: 'Basse' } : null
+          const subtasks = t.subtasks || []
+          const subsDone = subtasks.filter(s => s.done).length
+          const tags = t.tags || []
+          const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date(new Date().toDateString())
+          const prioHtml = prioConfig ? `<span class="badge" style="background:${prioConfig.color}14;color:${prioConfig.color}">${prioConfig.label}</span>` : ''
+          const dateHtml = t.dueDate ? `<span class="badge${isOverdue ? ' overdue' : ''}">${new Date(t.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>` : ''
+          const tagsHtml = tags.map(tag => `<span class="badge tag">${tag}</span>`).join('')
+          const subsHtml = subtasks.length > 0 ? `<span class="badge">${subsDone}/${subtasks.length} sous-tâches</span>` : ''
+          const notesHtml = t.notes ? `<p class="item-note">${t.notes}</p>` : ''
+          return `<div class="item-card task-card">
+            <div class="item-type-badge task-type">Tâche</div>
+            <p class="item-text${t.status === 'done' ? ' done' : ''}">${t.starred ? '<span class="star">★</span> ' : ''}${t.text}</p>
+            <div class="item-badges">${prioHtml}${dateHtml}${subsHtml}${tagsHtml}</div>
+            ${notesHtml}
+          </div>`
+        }),
+        ...colNotes.map(n => {
+          return `<div class="item-card note-card" style="border-left-color:${n.color || '#8b5cf6'}">
+            <div class="item-type-badge note-type">Note</div>
+            <p class="item-text">${n.title || 'Sans titre'}</p>
+            ${n.content ? `<p class="item-note">${n.content.substring(0, 120)}${n.content.length > 120 ? '…' : ''}</p>` : ''}
+          </div>`
+        })
+      ].join('')
+
+      return `<div class="col-card">
+        <div class="col-header">
+          <span class="col-dot" style="background:${col.color}"></span>
+          <span class="col-name">${col.label}</span>
+          <span class="col-count">${colCount}</span>
+        </div>
+        <div class="col-items">${itemsHtml || '<p class="empty-col">Aucun élément</p>'}</div>
+      </div>`
+    }).join('')
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${board?.name || 'Kanban'} — Make Your List</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #09090b; color: #e4e4e7; line-height: 1.6; min-height: 100vh; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 56px 36px 40px; }
+  .badge-brand {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 14px; border-radius: 20px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    background: linear-gradient(135deg, #7c3aed20, #8b5cf615);
+    color: #a78bfa; text-decoration: none;
+    border: 1px solid #7c3aed25; margin-bottom: 20px;
+  }
+  .badge-brand::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #8b5cf6; box-shadow: 0 0 8px #8b5cf680; }
+  h1.title { font-size: 32px; font-weight: 800; color: #fafafa; letter-spacing: -0.8px; margin-bottom: 16px; }
+  .stats-row { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-big { display: flex; align-items: baseline; gap: 6px; }
+  .stat-value { font-size: 28px; font-weight: 800; color: #fafafa; }
+  .stat-label { font-size: 13px; color: #71717a; font-weight: 500; }
+  .stat-pills { display: flex; gap: 10px; }
+  .stat-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #a1a1aa; font-weight: 500; }
+  .stat-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .progress-track { width: 100%; height: 10px; background: #18181b; border-radius: 10px; overflow: hidden; border: 1px solid #27272a; }
+  .progress-fill { height: 100%; border-radius: 10px; background: linear-gradient(90deg, #7c3aed, #8b5cf6, #a78bfa); transition: width 0.5s ease; }
+  .divider { height: 1px; background: linear-gradient(90deg, transparent, #27272a, transparent); margin: 28px 0 32px; }
+
+  .columns-grid { display: grid; grid-template-columns: repeat(${cols.length}, 1fr); gap: 16px; }
+  @media (max-width: 768px) { .columns-grid { grid-template-columns: 1fr; } }
+
+
+  .col-card {
+    background: rgba(255,255,255,0.02); border: 1px solid #ffffff0a; border-radius: 16px;
+    padding: 16px; min-height: 200px;
+  }
+  .col-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #ffffff08; }
+  .col-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .col-name { font-size: 14px; font-weight: 700; color: #fafafa; flex: 1; }
+  .col-count { font-size: 11px; color: #71717a; background: #ffffff0a; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+
+  .item-card { padding: 12px; margin-bottom: 8px; border: 1px solid #ffffff0a; border-radius: 12px; background: rgba(255,255,255,0.015); border-left: 3px solid #ffffff10; }
+  .item-card:hover { background: rgba(255,255,255,0.03); }
+  .task-card { border-left-color: #a78bfa40; }
+  .note-card { border-left-color: #60a5fa40; }
+  .item-type-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .task-type { color: #a78bfa; }
+  .note-type { color: #60a5fa; }
+  .item-text { font-size: 13.5px; font-weight: 600; color: #e4e4e7; line-height: 1.5; }
+  .item-text.done { text-decoration: line-through; opacity: 0.38; }
+  .star { color: #facc15; }
+  .item-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: #ffffff0a; color: #a1a1aa; }
+  .badge.overdue { background: #ef444418; color: #f87171; }
+  .badge.tag { background: #8b5cf612; color: #a78bfa; }
+  .item-note { margin-top: 6px; font-size: 11.5px; color: #52525b; font-style: italic; line-height: 1.5; }
+  .empty-col { text-align: center; color: #3f3f46; font-size: 12px; padding: 32px 0; }
+
+  .footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid #ffffff08; text-align: center; font-size: 11px; color: #3f3f46; }
+  .footer a { color: #8b5cf6; text-decoration: none; font-weight: 600; }
+
+  @media (prefers-color-scheme: light) {
+    body { background: #fafafa; color: #1a1a1a; }
+    h1.title { color: #0f172a; }
+    .stat-value { color: #0f172a; }
+    .stat-label, .stat-pill { color: #64748b; }
+    .progress-track { background: #e2e8f0; border-color: #e2e8f0; }
+    .divider { background: linear-gradient(90deg, transparent, #e2e8f0, transparent); }
+    .col-card { background: #f8fafc; border-color: #e2e8f020; }
+    .col-header { border-color: #e2e8f0; }
+    .col-name { color: #0f172a; }
+    .item-card { background: #fff; border-color: #e2e8f040; }
+    .item-text { color: #1e293b; }
+    .item-note { color: #94a3b8; }
+    .footer { border-color: #e2e8f0; color: #94a3b8; }
+  }
+  @media print {
+    body { background: white; color: #1a1a1a; }
+    .col-card { page-break-inside: avoid; background: #fafafa; border-color: #e5e7eb; }
+    .item-card { border-color: #e5e7eb; background: #fff; }
+    .progress-track { border-color: #e5e7eb; background: #f1f5f9; }
+  }
+  ${printOverride}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <a href="${window.location.origin}" class="badge-brand">MAKE YOUR LIST</a>
+    <h1 class="title">${board?.name || 'Kanban'}</h1>
+    <div class="stats-row">
+      <div class="stat-big"><span class="stat-value">${pct}%</span><span class="stat-label">complété</span></div>
+      <div class="stat-pills">
+        <span class="stat-pill"><span class="stat-dot" style="background:#a78bfa"></span>${totalTasks} tâche${totalTasks > 1 ? 's' : ''}</span>
+        <span class="stat-pill"><span class="stat-dot" style="background:#60a5fa"></span>${kanbanNotes.length} note${kanbanNotes.length > 1 ? 's' : ''}</span>
+        <span class="stat-pill"><span class="stat-dot" style="background:#4ade80"></span>${doneItems} terminé${doneItems > 1 ? 's' : ''}</span>
+      </div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+  </div>
+  <div class="divider"></div>
+  <div class="columns-grid">${colsHtml}</div>
+  <div class="footer">Exporté le ${date} depuis <a href="${window.location.origin}">Make Your List</a></div>
+</div>
+</body>
+</html>`
+  }
+
+  const exportKanbanHtml = () => {
+    if (!selectedBoard) return
+    const html = buildKanbanExportHtml(selectedBoard, columns)
+    const b = new Blob([html], { type: 'text/html' })
+    const u = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = u; a.download = `${selectedBoard.name || 'kanban'}.html`; a.click()
+    URL.revokeObjectURL(u)
+  }
+
+  const exportKanbanPdf = () => {
+    if (isFree || !selectedBoard) return
+    const html = buildKanbanExportHtml(selectedBoard, columns, true)
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1200px;height:800px;'
+    document.body.appendChild(iframe)
+    iframe.contentDocument.open()
+    iframe.contentDocument.write(html)
+    iframe.contentDocument.close()
+    iframe.onload = () => { iframe.contentWindow.print(); setTimeout(() => document.body.removeChild(iframe), 1000) }
+  }
+
+  const exportKanbanWord = () => {
+    if (isFree || !selectedBoard) return
+    const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+    const colsWordHtml = columns.map(col => {
+      const colTasks = kanbanTasks.filter(t => {
+        const cId = BUILTIN_STATUS[col.id] ? (t.status === col.id ? col.id : null) : (t.kanbanColumn === col.id ? col.id : null)
+        return cId === col.id
+      })
+      const colNotes = kanbanNotes.filter(n => {
+        if (BUILTIN_STATUS[col.id]) return n.kanbanStatus === col.id
+        return n.kanbanColumn === col.id
+      })
+
+      const itemsHtml = [
+        ...colTasks.map(t => {
+          const prioLabel = t.priority === 'high' ? ' · Priorité haute' : t.priority === 'low' ? ' · Priorité basse' : ''
+          const dueStr = t.dueDate ? ` · ${new Date(t.dueDate).toLocaleDateString('fr-FR')}` : ''
+          const subtasks = t.subtasks || []
+          const subsDone = subtasks.filter(s => s.done).length
+          const subsStr = subtasks.length > 0 ? ` · ${subsDone}/${subtasks.length} sous-tâches` : ''
+          const tags = t.tags || []
+          const tagsStr = tags.length > 0 ? ` · ${tags.join(', ')}` : ''
+          return `<tr>
+            <td style="width:6px;background:${col.color};padding:0;"></td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;">
+              <p style="margin:0;font-size:11pt;font-weight:bold;color:#222;${t.status === 'done' ? 'text-decoration:line-through;color:#999;' : ''}">${t.starred ? '★ ' : ''}${t.text}</p>
+              <p style="margin:2px 0 0;font-size:8.5pt;color:#999;">Tâche${prioLabel}${dueStr}${subsStr}${tagsStr}</p>
+              ${t.notes ? `<p style="margin:2px 0 0;font-size:8.5pt;color:#bbb;font-style:italic;">${t.notes}</p>` : ''}
+            </td>
+          </tr>`
+        }),
+        ...colNotes.map(n => `<tr>
+            <td style="width:6px;background:${n.color || '#60a5fa'};padding:0;"></td>
+            <td style="padding:8px 10px;border-bottom:1px solid #eee;">
+              <p style="margin:0;font-size:11pt;font-weight:bold;color:#222;">${n.title || 'Sans titre'}</p>
+              <p style="margin:2px 0 0;font-size:8.5pt;color:#999;">Note</p>
+              ${n.content ? `<p style="margin:2px 0 0;font-size:8.5pt;color:#bbb;font-style:italic;">${n.content.substring(0, 120)}${n.content.length > 120 ? '…' : ''}</p>` : ''}
+            </td>
+          </tr>`)
+      ].join('')
+
+      return `<div style="margin-bottom:24px;">
+        <table style="width:100%;border-collapse:collapse;margin-bottom:4px;">
+          <tr>
+            <td style="padding:6px 0;">
+              <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col.color};margin-right:6px;vertical-align:middle;"></span>
+              <span style="font-size:13pt;font-weight:bold;color:#111;">${col.label}</span>
+              <span style="font-size:9pt;color:#999;margin-left:8px;">${colTasks.length + colNotes.length} éléments</span>
+            </td>
+          </tr>
+        </table>
+        <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:6px;">
+          ${itemsHtml || '<tr><td style="padding:16px;text-align:center;color:#ccc;font-size:10pt;">Aucun élément</td></tr>'}
+        </table>
+      </div>`
+    }).join('')
+
+    const wordHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${selectedBoard.name || 'Kanban'}</title>
+<style>
+  body { font-family: Calibri, Arial, sans-serif; color: #1a1a1a; line-height: 1.5; padding: 48px; }
+  .header { margin-bottom: 28px; padding-bottom: 16px; border-bottom: 2px solid #8b5cf6; }
+  h1.title { font-size: 28pt; color: #111; margin-bottom: 6px; }
+  .meta { font-size: 10pt; color: #888; }
+  .footer { margin-top: 40px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 8pt; color: #aaa; text-align: center; }
+</style></head>
+<body>
+  <div class="header">
+    <p style="font-size:9pt;font-weight:bold;color:#8b5cf6;letter-spacing:1px;margin-bottom:10px;">MAKE YOUR LIST</p>
+    <h1 class="title">${selectedBoard.name || 'Kanban'}</h1>
+    <div class="meta">${doneItems}/${totalItems} terminé${totalItems > 1 ? 's' : ''} · ${pct}% · ${totalTasks} tâche${totalTasks > 1 ? 's' : ''} · ${kanbanNotes.length} note${kanbanNotes.length > 1 ? 's' : ''} · Exporté le ${date}</div>
+  </div>
+  ${colsWordHtml}
+  <div class="footer">Exporté depuis Make Your List</div>
+</body></html>`
+    const b = new Blob(['\ufeff' + wordHtml], { type: 'application/msword' })
+    const u = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = u; a.download = `${selectedBoard.name || 'kanban'}.doc`; a.click()
+    URL.revokeObjectURL(u)
+  }
+
+  const handleShareKanban = async () => {
+    if (!selectedBoard || shareLoading) return
+    if (shareUrl) {
+      navigator.clipboard.writeText(shareUrl)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+      return
+    }
+    setShareLoading(true)
+    const token = await createShareLink('kanban', selectedBoard.id)
+    if (token) {
+      const url = `${window.location.origin}/share/${token}`
+      setShareUrl(url)
+      setShowSharePopup(true)
+      navigator.clipboard.writeText(url)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+      logActivity('share_link', `Lien de partage créé pour le kanban "${selectedBoard.name}"`)
+    }
+    setShareLoading(false)
+  }
+
+  // Reset share/export state when changing board
+  useEffect(() => { setShareUrl(null); setShowSharePopup(false); setShareCopied(false); setShowKanbanExportMenu(false) }, [selectedBoardId])
+
   const openTask = openCardType === 'task' ? allTodos.find(t => t.id === openCardId) : null
   const openNote = openCardType === 'note' ? notes.find(n => n.id === openCardId) : null
 
@@ -732,6 +1044,46 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
             <button className={cn("flex items-center gap-2 px-3.5 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-sm text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground", showFilters && "border-violet-500/40 text-violet-400")}
               onClick={() => setShowFilters(!showFilters)}><Filter size={14} /> Filtres {filterList !== 'all' && <span className="w-2 h-2 rounded-lg bg-violet-500" />}</button>
             <div className="flex-1" />
+
+            {/* Export menu */}
+            <div className="relative shrink-0">
+              <button className="flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground" onClick={() => setShowKanbanExportMenu(!showKanbanExportMenu)} title="Exporter"><Download size={13} /> Export</button>
+              {showKanbanExportMenu && (
+                <div className="absolute right-0 top-full mt-1 w-52 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 animate-scale-in py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                  <button className="flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none text-foreground cursor-pointer text-xs text-left hover:bg-accent transition-colors" onClick={() => { exportKanbanHtml(); setShowKanbanExportMenu(false) }}>
+                    <span className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0"><FileText size={13} /></span>
+                    <div><div className="font-medium">HTML</div><div className="text-[0.6rem] text-muted-foreground">Gratuit — page web stylée</div></div>
+                  </button>
+                  <button className={cn("flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none cursor-pointer text-xs text-left transition-colors", isFree ? "text-muted-foreground/50 cursor-not-allowed" : "text-foreground hover:bg-accent")} onClick={() => { if (!isFree) { exportKanbanPdf(); setShowKanbanExportMenu(false) } }}>
+                    <span className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0", isFree ? "bg-white/5 text-muted-foreground/30" : "bg-red-500/15 text-red-400")}><FileText size={13} /></span>
+                    <div><div className="font-medium flex items-center gap-1.5">PDF {isFree && <span className="text-[0.55rem] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 font-semibold">ÉTUDIANT+</span>}</div><div className="text-[0.6rem] text-muted-foreground">Impression / enregistrer en PDF</div></div>
+                  </button>
+                  <button className={cn("flex items-center gap-2.5 w-full px-3.5 py-2.5 bg-transparent border-none cursor-pointer text-xs text-left transition-colors", isFree ? "text-muted-foreground/50 cursor-not-allowed" : "text-foreground hover:bg-accent")} onClick={() => { if (!isFree) { exportKanbanWord(); setShowKanbanExportMenu(false) } }}>
+                    <span className={cn("w-7 h-7 rounded-lg flex items-center justify-center shrink-0", isFree ? "bg-white/5 text-muted-foreground/30" : "bg-blue-500/15 text-blue-400")}><FileText size={13} /></span>
+                    <div><div className="font-medium flex items-center gap-1.5">Word {isFree && <span className="text-[0.55rem] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 font-semibold">ÉTUDIANT+</span>}</div><div className="text-[0.6rem] text-muted-foreground">Document .doc compatible Word</div></div>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Share button */}
+            <div className="relative shrink-0">
+              <button className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs cursor-pointer transition-all duration-150", shareUrl ? "text-emerald-400 border-emerald-500/30" : "text-muted-foreground hover:text-foreground")} onClick={handleShareKanban} title="Partager un lien">
+                {shareLoading ? <span className="animate-spin block w-3.5 h-3.5 border-2 border-muted-foreground/30 border-t-primary rounded-full" /> : shareCopied ? <Check size={13} /> : <Share2 size={13} />}
+                Partager
+              </button>
+              {showSharePopup && shareUrl && (
+                <div className="absolute right-0 top-full mt-1 w-64 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl p-3 z-50 animate-scale-in" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                  <div className="text-[0.65rem] font-semibold text-muted-foreground mb-2">Lien de partage</div>
+                  <div className="flex items-center gap-2">
+                    <input type="text" readOnly value={shareUrl} className="flex-1 px-2 py-1.5 bg-input border border-white/10 rounded-lg text-[0.65rem] text-foreground outline-none min-w-0" onClick={e => e.target.select()} />
+                    <button className="px-2.5 py-1.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white border-none rounded-lg text-[0.65rem] font-semibold cursor-pointer shadow-sm" onClick={() => { navigator.clipboard.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000) }}>{shareCopied ? '✓ Copié' : 'Copier'}</button>
+                  </div>
+                  <button className="mt-2 text-[0.6rem] text-muted-foreground/60 bg-transparent border-none cursor-pointer hover:text-foreground transition-colors" onClick={() => setShowSharePopup(false)}>Fermer</button>
+                </div>
+              )}
+            </div>
+
             <button className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground", compact && "bg-violet-500/15 text-violet-400 border-violet-500/30")}
               onClick={() => setCompact(!compact)}>{compact ? <Eye size={13} /> : <EyeOff size={13} />} {compact ? 'Detaille' : 'Compact'}</button>
           </div>

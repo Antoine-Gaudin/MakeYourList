@@ -2,12 +2,23 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { usePageMeta } from '../hooks/usePageMeta'
-import { FileText, Columns3, StickyNote, CheckSquare, Circle, Check, Clock, AlertCircle, Star, ChevronRight, XCircle, ArrowLeft, Link2, Calendar } from 'lucide-react'
+import { FileText, Columns3, StickyNote, CheckSquare, Circle, Check, Clock, AlertCircle, Star, ChevronRight, XCircle, ArrowLeft, Link2, Calendar, Paperclip, File, Image } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { PRIORITIES, TAG_COLORS } from '../lib/constants'
 import Loader from './Loader'
 
 const STATUS_LABELS = { todo: 'A faire', doing: 'En cours', done: 'Termine' }
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' o'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' Mo'
+}
+
+function getFileIcon(fileType) {
+  if (fileType?.startsWith('image/')) return <Image size={14} className="text-emerald-400" />
+  return <File size={14} className="text-blue-400" />
+}
 const STATUS_ICONS = { todo: Circle, doing: Clock, done: Check }
 const PRIORITY_COLORS = { low: '#51cf66', medium: '#ffd43b', high: '#ff6b6b', urgent: '#e03131' }
 
@@ -16,6 +27,7 @@ function SharedNote({ data }) {
   if (!note) return null
   const updatedAt = note.updated_at || note.updatedAt
   const dateStr = updatedAt ? new Date(updatedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null
+  const attachments = note.attachments || []
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -31,6 +43,32 @@ function SharedNote({ data }) {
         className="text-[0.92rem] leading-[1.8] text-foreground/85 [&>h1]:text-2xl [&>h1]:font-bold [&>h1]:text-foreground [&>h1]:mt-8 [&>h1]:mb-3 [&>h2]:text-xl [&>h2]:font-semibold [&>h2]:text-foreground [&>h2]:mt-6 [&>h2]:mb-2 [&>h3]:text-lg [&>h3]:font-semibold [&>h3]:text-foreground/90 [&>h3]:mt-5 [&>h3]:mb-2 [&>p]:mb-3 [&>ul]:pl-6 [&>ul]:list-disc [&>ul]:my-3 [&>ol]:pl-6 [&>ol]:list-decimal [&>ol]:my-3 [&_li]:my-1 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-3 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:text-muted-foreground [&_blockquote]:italic [&_code]:bg-white/[0.06] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_code]:font-mono [&_pre]:bg-white/[0.04] [&_pre]:border [&_pre]:border-white/10 [&_pre]:rounded-xl [&_pre]:p-4 [&_pre]:overflow-x-auto [&_pre]:my-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_img]:max-w-full [&_img]:rounded-lg [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:border [&_th]:border-white/10 [&_th]:bg-white/[0.04] [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:text-sm [&_th]:font-semibold [&_td]:border [&_td]:border-white/10 [&_td]:px-3 [&_td]:py-2 [&_td]:text-sm"
         dangerouslySetInnerHTML={{ __html: note.content || '' }}
       />
+      {attachments.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-white/10">
+          <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
+            <Paperclip size={13} className="text-amber-400" />
+            <span className="font-semibold text-amber-400">{attachments.length} pièce{attachments.length > 1 ? 's' : ''} jointe{attachments.length > 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {attachments.map(att => {
+              const url = supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl
+              return (
+                <a
+                  key={att.id}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[0.72rem] font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors no-underline"
+                >
+                  {getFileIcon(att.file_type)}
+                  <span className="truncate max-w-[160px]">{att.file_name}</span>
+                  <span className="text-[0.58rem] text-muted-foreground/60">{formatFileSize(att.file_size)}</span>
+                </a>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -40,50 +78,116 @@ function SharedList({ data }) {
   if (!list) return null
   const tasksList = tasks || []
   const doneCount = tasksList.filter(t => t.status === 'done').length
+  const doingCount = tasksList.filter(t => t.status === 'doing').length
+  const todoCount = tasksList.filter(t => t.status === 'todo').length
+  const pct = tasksList.length > 0 ? Math.round((doneCount / tasksList.length) * 100) : 0
+  const PRIO_LABELS = { low: 'Basse', medium: 'Moyenne', high: 'Haute', urgent: 'Urgente' }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="flex items-center gap-3 mb-2">
-        <FileText size={20} className="text-primary" />
-        <h1 className="text-2xl font-bold text-foreground">{list.name}</h1>
-      </div>
-      <p className="text-sm text-muted-foreground mb-6">{doneCount}/{tasksList.length} termine{tasksList.length !== 1 ? 'es' : 'e'}</p>
+    <div className="max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="mb-10 pb-8 border-b border-white/10">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[0.65rem] font-semibold mb-4" style={{ background: '#8b5cf618', color: '#8b5cf6' }}>
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#8b5cf6' }} />
+          MAKE YOUR LIST
+        </div>
+        <h1 className="text-3xl font-bold text-foreground mb-3 tracking-tight">{list.name}</h1>
 
-      <div className="flex flex-col gap-2">
-        {tasksList.map(t => {
+        {/* Stats row */}
+        <div className="flex items-center gap-4 mb-4 flex-wrap">
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="font-bold text-foreground">{pct}%</span>
+            <span className="text-muted-foreground">complétée</span>
+          </div>
+          <div className="w-px h-4 bg-white/10" />
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-400" />{todoCount} à faire</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />{doingCount} en cours</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" />{doneCount} terminée{doneCount > 1 ? 's' : ''}</span>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="relative h-2.5 bg-white/[0.06] rounded-full overflow-hidden">
+          {tasksList.length > 0 && (
+            <>
+              <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+              {doingCount > 0 && <div className="absolute top-0 h-full bg-blue-400/40 rounded-full" style={{ left: `${pct}%`, width: `${Math.round((doingCount / tasksList.length) * 100)}%` }} />}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Task list */}
+      <div className="flex flex-col gap-2.5">
+        {tasksList.map((t, i) => {
           const StatusIcon = STATUS_ICONS[t.status] || Circle
           const subtasks = t.subtasks || []
+          const subsDone = subtasks.filter(s => s.done).length
+          const statusColor = t.status === 'done' ? '#4ade80' : t.status === 'doing' ? '#60a5fa' : '#a78bfa'
+          const isOverdue = t.due_date && t.status !== 'done' && new Date(t.due_date) < new Date(new Date().toDateString())
+
           return (
-            <div key={t.id} className="bg-white/[0.03] border border-white/10 rounded-xl p-4 transition-colors hover:bg-white/[0.05]">
-              <div className="flex items-start gap-3">
-                <StatusIcon size={16} className={`shrink-0 mt-0.5 ${t.status === 'done' ? 'text-emerald-400' : t.status === 'doing' ? 'text-amber-400' : 'text-muted-foreground'}`} />
+            <div key={t.id} className="group relative border border-white/[0.07] rounded-2xl p-4 transition-all duration-200 hover:border-white/15 hover:bg-white/[0.02]" style={{ borderLeftWidth: 3, borderLeftColor: statusColor + '60', background: `linear-gradient(135deg, ${statusColor}04, transparent)` }}>
+              <div className="flex items-start gap-3.5">
+                {/* Status indicator */}
+                <div className="flex items-center justify-center w-7 h-7 rounded-full border-2 shrink-0 mt-0.5" style={{ background: statusColor + '15', borderColor: statusColor + '40', color: statusColor }}>
+                  {t.status === 'done' ? <Check size={13} /> : t.status === 'doing' ? <Clock size={13} /> : <Circle size={13} />}
+                </div>
+
                 <div className="flex-1 min-w-0">
-                  <span className={`text-sm ${t.status === 'done' ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{t.text}</span>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {/* Task text + star */}
+                  <div className="flex items-start gap-2">
+                    <span className={cn("text-[0.88rem] font-medium leading-snug flex-1", t.status === 'done' ? 'line-through text-muted-foreground/50' : 'text-foreground')}>{t.text}</span>
+                    {t.starred && <Star size={13} className="text-amber-400 fill-amber-400 shrink-0 mt-0.5" />}
+                  </div>
+
+                  {/* Meta badges */}
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {t.priority && t.priority !== 'medium' && (
-                      <span className="text-[0.6rem] px-1.5 py-0.5 rounded-md font-semibold" style={{ background: `${PRIORITY_COLORS[t.priority]}20`, color: PRIORITY_COLORS[t.priority] }}>
-                        {t.priority}
+                      <span className="text-[0.62rem] px-2 py-0.5 rounded-lg font-semibold" style={{ background: `${PRIORITY_COLORS[t.priority]}18`, color: PRIORITY_COLORS[t.priority] }}>
+                        {PRIO_LABELS[t.priority] || t.priority}
                       </span>
                     )}
-                    {t.due_date && <span className="text-[0.6rem] text-muted-foreground">{new Date(t.due_date).toLocaleDateString('fr-FR')}</span>}
-                    {(t.tags || []).map(tag => <span key={tag} className="text-[0.6rem] px-1.5 py-0.5 rounded-md bg-primary/15 text-primary">{tag}</span>)}
-                    {t.starred && <Star size={10} className="text-amber-400 fill-amber-400" />}
+                    {t.due_date && (
+                      <span className={cn("inline-flex items-center gap-1 text-[0.62rem] px-2 py-0.5 rounded-lg", isOverdue ? "bg-red-500/15 text-red-400 font-semibold" : "bg-white/[0.06] text-muted-foreground")}>
+                        <Calendar size={10} />
+                        {new Date(t.due_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                    {(t.tags || []).map(tag => (
+                      <span key={tag} className="text-[0.62rem] px-2 py-0.5 rounded-lg font-semibold bg-violet-500/12 text-violet-400">{tag}</span>
+                    ))}
+                    {subtasks.length > 0 && (
+                      <span className="inline-flex items-center gap-1.5 text-[0.62rem] px-2 py-0.5 rounded-lg bg-white/[0.06] text-muted-foreground">
+                        <Check size={10} /> {subsDone}/{subtasks.length}
+                        <span className="inline-block w-10 h-1 bg-white/10 rounded-full overflow-hidden">
+                          <span className="block h-full rounded-full bg-emerald-400/70" style={{ width: `${(subsDone / subtasks.length) * 100}%` }} />
+                        </span>
+                      </span>
+                    )}
                   </div>
+
+                  {/* Notes */}
+                  {t.notes && <p className="text-xs text-muted-foreground/50 mt-2 italic leading-relaxed">{t.notes}</p>}
+
+                  {/* Subtasks */}
                   {subtasks.length > 0 && (
-                    <div className="mt-2 pl-1 flex flex-col gap-1">
+                    <div className="mt-3 pt-2.5 border-t border-white/[0.05] flex flex-col gap-1.5">
                       {subtasks.map(s => (
                         <div key={s.id} className="flex items-center gap-2 text-xs">
-                          {s.done ? <Check size={12} className="text-emerald-400" /> : <Circle size={12} className="text-muted-foreground" />}
-                          <span className={s.done ? 'line-through text-muted-foreground' : 'text-foreground/70'}>{s.text}</span>
+                          {s.done ? <Check size={11} className="text-emerald-400 shrink-0" /> : <Circle size={11} className="text-muted-foreground/40 shrink-0" />}
+                          <span className={s.done ? 'line-through text-muted-foreground/40' : 'text-foreground/70'}>{s.text}</span>
                         </div>
                       ))}
                     </div>
                   )}
-                  {t.notes && <p className="text-xs text-muted-foreground/60 mt-1.5 italic">{t.notes}</p>}
+
+                  {/* Linked note */}
                   {t.linked_note_id && (
-                    <div className="mt-2 flex items-center gap-1.5 text-[0.65rem] text-cyan-400">
+                    <div className="mt-2.5 inline-flex items-center gap-1.5 text-[0.62rem] px-2 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 font-semibold">
                       <Link2 size={10} />
-                      <span className="font-semibold">Note liee</span>
+                      Note liée
                     </div>
                   )}
                 </div>
@@ -91,7 +195,12 @@ function SharedList({ data }) {
             </div>
           )
         })}
-        {tasksList.length === 0 && <p className="text-center text-muted-foreground py-8">Liste vide</p>}
+        {tasksList.length === 0 && (
+          <div className="text-center py-16 text-muted-foreground/40">
+            <FileText size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm">Cette liste est vide</p>
+          </div>
+        )}
       </div>
     </div>
   )
