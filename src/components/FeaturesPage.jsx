@@ -18,7 +18,7 @@ export default function FeaturesPage({ onNavigate }) {
   })
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden">
 
       {/* ═══ HERO ═══ */}
       <section className="relative py-24 px-6 overflow-hidden noise-overlay">
@@ -59,7 +59,7 @@ export default function FeaturesPage({ onNavigate }) {
       {/* ═══ FEATURE 1 — LISTES DE TÂCHES ═══ */}
       <section className="py-20 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-violet-500/[0.04] to-transparent pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-semibold mb-5">
               <CheckSquare size={12} /> LISTES DE TÂCHES
@@ -170,7 +170,7 @@ export default function FeaturesPage({ onNavigate }) {
       {/* ═══ FEATURE 2 — KANBAN ═══ */}
       <section className="py-20 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-500/[0.05] via-cyan-500/[0.03] to-transparent pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
           {/* Mockup fidèle Kanban */}
           <div className="order-2 lg:order-1 relative float-slow">
             <div className="absolute -inset-6 bg-gradient-to-br from-blue-500/20 to-cyan-500/15 rounded-3xl blur-3xl" />
@@ -356,7 +356,7 @@ export default function FeaturesPage({ onNavigate }) {
       {/* ═══ FEATURE 4 — PARTAGE ═══ */}
       <section className="py-20 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-amber-500/[0.04] to-transparent pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
           {/* Mockup partage */}
           <div className="order-2 lg:order-1 relative float-slow">
             <div className="absolute -inset-6 bg-gradient-to-br from-amber-500/20 to-orange-500/15 rounded-3xl blur-3xl" />
@@ -434,7 +434,7 @@ export default function FeaturesPage({ onNavigate }) {
       {/* ═══ FEATURE 5 — EXPORT DE NOTES ═══ */}
       <section className="py-20 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-pink-500/[0.04] to-transparent pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-pink-500/15 border border-pink-500/25 text-pink-400 text-xs font-semibold mb-5">
               <Download size={12} /> EXPORT
@@ -502,7 +502,7 @@ export default function FeaturesPage({ onNavigate }) {
       {/* ═══ FEATURE 6 — API REST ═══ */}
       <section className="py-20 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-teal-500/[0.04] to-transparent pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
           {/* Mockup API */}
           <div className="order-2 lg:order-1 relative float-slow">
             <div className="absolute -inset-6 bg-gradient-to-br from-teal-500/20 to-cyan-500/15 rounded-3xl blur-3xl" />
@@ -564,7 +564,7 @@ export default function FeaturesPage({ onNavigate }) {
       {/* ═══ FEATURE 7 — APPLICATION MOBILE ═══ */}
       <section className="py-20 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-blue-500/[0.04] to-transparent pointer-events-none" />
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-16 items-center relative z-10">
           {/* Phone mockup */}
           <div className="order-2 lg:order-1 relative float-slow">
             <div className="absolute -inset-6 bg-gradient-to-br from-blue-500/20 to-cyan-500/15 rounded-3xl blur-3xl" />

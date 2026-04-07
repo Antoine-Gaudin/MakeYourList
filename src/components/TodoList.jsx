@@ -720,6 +720,13 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
       const start = Math.min(browserLastIdx.current, idx), end = Math.max(browserLastIdx.current, idx)
       setSelectedBrowserItems(allItems.slice(start, end + 1)); return
     }
+    // Sur mobile (touch), un seul tap ouvre directement
+    if (navigator.maxTouchPoints > 0) {
+      clearBrowserSelection()
+      if (type === 'folder') enterFolder(id)
+      else openList(id)
+      return
+    }
     setSelectedBrowserItems([{ type, id }])
     browserLastIdx.current = idx
   }
@@ -752,6 +759,12 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
       e.preventDefault(); e.stopPropagation()
       const start = Math.min(taskLastIdx.current, idx), end = Math.max(taskLastIdx.current, idx)
       setSelectedTaskIds(filtered.slice(start, end + 1).map(t => t.id)); return
+    }
+    // Sur mobile (touch), un seul tap ouvre le détail
+    if (navigator.maxTouchPoints > 0) {
+      clearTaskSelection()
+      openDetail(todoId)
+      return
     }
     setSelectedTaskIds([todoId])
     taskLastIdx.current = idx

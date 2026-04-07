@@ -478,7 +478,7 @@ export default function AuthPage() {
       <section className="py-16 md:py-28 px-6 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-500/[0.03] to-transparent pointer-events-none" />
         <div className="max-w-6xl mx-auto relative z-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-blue-400 text-xs font-semibold mb-5"><Smartphone size={12} /> APPLICATION MOBILE</div>
               <h2 className="text-3xl md:text-4xl font-extrabold mb-5">Emportez votre workspace <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">partout avec vous</span></h2>

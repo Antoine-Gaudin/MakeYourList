@@ -466,6 +466,13 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
       setSelectedItems(all.slice(start, end + 1))
       return
     }
+    // Sur mobile (touch), un seul tap ouvre directement
+    if (navigator.maxTouchPoints > 0) {
+      clearSelection()
+      if (type === 'folder') enterFolder(id)
+      else openNote(id)
+      return
+    }
     // Normal click: select this item only
     setSelectedItems([{ type, id }])
     lastClickedIdx.current = idx
@@ -673,7 +680,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
     return (
       <div className="flex-1 flex flex-col overflow-y-auto page-transition relative">
         {templatePicker}
-        <div className="px-10 pt-14 pb-4 relative z-1">
+        <div className="px-4 sm:px-10 pt-8 sm:pt-14 pb-4 relative z-1">
           {/* Title */}
           <div className="flex items-center gap-5 mb-10">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white shadow-lg dash-header-icon" style={{ boxShadow: '0 8px 30px rgba(16,185,129,0.35), 0 0 50px rgba(16,185,129,0.12)' }}><FileText size={24} /></div>
@@ -702,7 +709,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
           </div>
         </div>
 
-        <div className="px-10 pb-10 pt-4 flex-1" onMouseDown={handleGridMouseDown}>
+        <div className="px-4 sm:px-10 pb-6 sm:pb-10 pt-4 flex-1" onMouseDown={handleGridMouseDown}>
           {showNewFolder && !currentFolderId && (
             <div className="flex items-center gap-2 mb-5 animate-slide-up">
               <input type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addFolder(); if (e.key === 'Escape') { setShowNewFolder(false); setNewFolderName('') } }} placeholder="Nom du dossier..." autoFocus className="flex-1 px-4 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm outline-none focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] glow-ring" />
@@ -711,7 +718,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
             </div>
           )}
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-5 relative" ref={gridRef}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-5 relative" ref={gridRef}>
             {/* Lasso rectangle */}
             {lassoRect && (
               <div className="fixed border border-violet-500/50 bg-violet-500/10 rounded-sm pointer-events-none z-50" style={{ left: lassoRect.x, top: lassoRect.y, width: lassoRect.w, height: lassoRect.h }} />
@@ -741,7 +748,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                   <span className="text-sm font-semibold text-center">{f.name}</span>
                   <span className="text-xs text-muted-foreground counter-animate">{count} note{count !== 1 ? 's' : ''}</span>
                   {isOver && <span className="text-[0.6rem] text-warning font-semibold">Déposer ici</span>}
-                  <button className="absolute top-3 right-3 flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-150 hover:text-destructive hover:bg-destructive/10" onClick={e => { e.stopPropagation(); deleteFolder(f.id) }}><Trash2 size={13} /></button>
+                  <button className="absolute top-3 right-3 flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-all duration-150 hover:text-destructive hover:bg-destructive/10" onClick={e => { e.stopPropagation(); deleteFolder(f.id) }}><Trash2 size={13} /></button>
                 </div>
               )
             })}
@@ -784,7 +791,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                     {ll > 0 && <span className="inline-flex items-center gap-0.5 text-blue-400" title={`${ll} liste${ll > 1 ? 's' : ''} liée${ll > 1 ? 's' : ''}`}><Link2 size={9} />{ll} liste{ll > 1 ? 's' : ''}</span>}
                   </div>
                 ) : null })()}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
                   <ShareButton itemType="note" itemId={note.id} createShareLink={createShareLink} />
                   <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-destructive hover:bg-destructive/10 transition-colors duration-150" onClick={e => { e.stopPropagation(); deleteNote(note.id) }}><Trash2 size={13} /></button>
                 </div>
@@ -891,11 +898,11 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 <button className="p-1.5 bg-transparent border-none cursor-pointer rounded-lg transition-all text-muted-foreground hover:text-foreground" onClick={() => updateNote(current.id, { pinned: !current.pinned })} title="Épingler">
                   {current.pinned ? <PinOff size={14} /> : <Pin size={14} />}
                 </button>
-                <select className="px-2 py-1 bg-input border border-white/10 rounded-lg text-[0.65rem] text-muted-foreground outline-none cursor-pointer" value={current.folder || ''} onChange={e => updateNote(current.id, { folder: e.target.value })}>
+                <select className="hidden sm:inline-block px-2 py-1 bg-input border border-white/10 rounded-lg text-[0.65rem] text-muted-foreground outline-none cursor-pointer" value={current.folder || ''} onChange={e => updateNote(current.id, { folder: e.target.value })}>
                   {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
-                <button className="p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground" onClick={() => duplicateNote(current)} title="Dupliquer"><Copy size={14} /></button>
-                <div className="relative">
+                <button className="hidden sm:inline-flex p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground" onClick={() => duplicateNote(current)} title="Dupliquer"><Copy size={14} /></button>
+                <div className="hidden sm:block relative">
                   <button className="p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground" onClick={() => setShowExportMenu(!showExportMenu)} title="Exporter"><Download size={14} /></button>
                   {showExportMenu && (
                     <div className="absolute right-0 top-full mt-1 w-52 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 animate-scale-in py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
@@ -914,7 +921,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                     </div>
                   )}
                 </div>
-                <div className="relative" ref={shareRef}>
+                <div className="hidden sm:block relative" ref={shareRef}>
                   <button className={cn("p-1.5 bg-transparent border-none cursor-pointer rounded-lg transition-all", shareUrl ? "text-emerald-400" : "text-muted-foreground hover:text-foreground")} onClick={() => handleShareNote(current.id)} title="Partager un lien">
                     {shareLoading ? <span className="animate-spin block w-3.5 h-3.5 border-2 border-muted-foreground/30 border-t-primary rounded-full" /> : shareCopied ? <Check size={14} /> : <Share2 size={14} />}
                   </button>
@@ -938,7 +945,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
             </div>
 
             {/* Word-style toolbar */}
-            <div className="flex items-center gap-0.5 px-4 py-1.5 border-y border-white/10 bg-secondary/30 flex-wrap">
+            <div className="flex items-center gap-0.5 px-2 sm:px-4 py-1.5 border-y border-white/10 bg-secondary/30 overflow-x-auto">
               {/* Undo / Redo */}
               <button onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => { restoreSelection(); document.execCommand('undo') }} title="Annuler (Ctrl+Z)" className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted-foreground cursor-pointer rounded transition-all hover:bg-accent hover:text-foreground"><Undo2 size={14} /></button>
               <button onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => { restoreSelection(); document.execCommand('redo') }} title="Rétablir (Ctrl+Y)" className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted-foreground cursor-pointer rounded transition-all hover:bg-accent hover:text-foreground"><Redo2 size={14} /></button>
@@ -1180,7 +1187,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 onInput={handleEditorInput}
                 onKeyDown={handleEditorKeyDown}
                 data-placeholder="Commencez a ecrire..."
-                className="flex-1 bg-transparent text-[0.88rem] leading-[1.8] px-6 py-5 outline-none overflow-y-auto text-foreground empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/25 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:mt-4 [&>h1]:mb-2 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:mt-3 [&>h2]:mb-1.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:mt-2 [&>h3]:mb-1 [&>ul]:pl-5 [&>ul]:list-disc [&>ol]:pl-5 [&>ol]:list-decimal [&>blockquote]:border-l-2 [&>blockquote]:border-primary [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&_a]:text-primary [&_a]:underline"
+                className="flex-1 bg-transparent text-[0.88rem] leading-[1.8] px-4 sm:px-6 py-4 sm:py-5 outline-none overflow-y-auto text-foreground empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/25 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:mt-4 [&>h1]:mb-2 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:mt-3 [&>h2]:mb-1.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:mt-2 [&>h3]:mb-1 [&>ul]:pl-5 [&>ul]:list-disc [&>ol]:pl-5 [&>ol]:list-decimal [&>blockquote]:border-l-2 [&>blockquote]:border-primary [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&_a]:text-primary [&_a]:underline"
               />
             </div>
 
@@ -1190,7 +1197,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
                 <span className="counter-animate">{charCount} caracteres</span>
               </div>
-              <span>Modifiee {new Date(current.updatedAt).toLocaleString('fr-FR')}</span>
+              <span className="hidden sm:block">Modifiee {new Date(current.updatedAt).toLocaleString('fr-FR')}</span>
             </div>
           </>
         ) : (
