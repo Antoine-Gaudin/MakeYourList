@@ -898,11 +898,11 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 <button className="p-1.5 bg-transparent border-none cursor-pointer rounded-lg transition-all text-muted-foreground hover:text-foreground" onClick={() => updateNote(current.id, { pinned: !current.pinned })} title="Épingler">
                   {current.pinned ? <PinOff size={14} /> : <Pin size={14} />}
                 </button>
-                <select className="hidden sm:inline-block px-2 py-1 bg-input border border-white/10 rounded-lg text-[0.65rem] text-muted-foreground outline-none cursor-pointer" value={current.folder || ''} onChange={e => updateNote(current.id, { folder: e.target.value })}>
+                <select className="px-2 py-1 bg-input border border-white/10 rounded-lg text-[0.65rem] text-muted-foreground outline-none cursor-pointer" value={current.folder || ''} onChange={e => updateNote(current.id, { folder: e.target.value })}>
                   {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
-                <button className="hidden sm:inline-flex p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground" onClick={() => duplicateNote(current)} title="Dupliquer"><Copy size={14} /></button>
-                <div className="hidden sm:block relative">
+                <button className="p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground" onClick={() => duplicateNote(current)} title="Dupliquer"><Copy size={14} /></button>
+                <div className="relative">
                   <button className="p-1.5 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:text-foreground" onClick={() => setShowExportMenu(!showExportMenu)} title="Exporter"><Download size={14} /></button>
                   {showExportMenu && (
                     <div className="absolute right-0 top-full mt-1 w-52 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 animate-scale-in py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
@@ -921,7 +921,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                     </div>
                   )}
                 </div>
-                <div className="hidden sm:block relative" ref={shareRef}>
+                <div className="relative" ref={shareRef}>
                   <button className={cn("p-1.5 bg-transparent border-none cursor-pointer rounded-lg transition-all", shareUrl ? "text-emerald-400" : "text-muted-foreground hover:text-foreground")} onClick={() => handleShareNote(current.id)} title="Partager un lien">
                     {shareLoading ? <span className="animate-spin block w-3.5 h-3.5 border-2 border-muted-foreground/30 border-t-primary rounded-full" /> : shareCopied ? <Check size={14} /> : <Share2 size={14} />}
                   </button>
