@@ -875,7 +875,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
       <div className="flex-1 flex flex-col min-w-0 relative z-1">
         {current ? (
           <>
-            <div className="flex items-center gap-1.5 text-sm px-6 pt-4 text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-sm px-4 sm:px-6 pt-4 text-muted-foreground">
               <button className="inline-flex items-center gap-1 bg-transparent border-none text-muted-foreground cursor-pointer text-sm hover:text-primary transition-colors duration-150" onClick={goToBrowser}><FileText size={13} /> Notes</button>
               {currentFolderMeta && currentFolderMeta.id !== 'all' && <><ChevronRight size={12} className="text-muted-foreground/40" /><span className="inline-flex items-center gap-1"><Folder size={13} /> {currentFolderMeta.name}</span></>}
               <ChevronRight size={12} className="text-muted-foreground/40" />
@@ -883,10 +883,10 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
             </div>
 
             {/* Title bar */}
-            <div className="px-6 pt-4 pb-2 flex items-center gap-3">
+            <div className="px-4 sm:px-6 pt-3 sm:pt-4 pb-2 flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
               <input key={`title-${current.id}`} ref={titleRef} type="text" defaultValue={current.title} onChange={e => debouncedTitleSave(current.id, e.target.value)} placeholder="Titre de la note"
-                className="flex-1 bg-transparent border-none text-2xl font-bold py-1 outline-none placeholder:text-muted-foreground/30 text-foreground" />
-              <div className="flex items-center gap-0.5 shrink-0">
+                className="flex-1 w-full bg-transparent border-none text-xl sm:text-2xl font-bold py-1 outline-none placeholder:text-muted-foreground/30 text-foreground" />
+              <div className="flex items-center gap-0.5 shrink-0 flex-wrap">
                 {COLORS.map(c => (
                   <button key={c} className={cn("w-4 h-4 rounded-full border-2 cursor-pointer transition-all duration-150 hover:scale-125", current.color === c ? "border-white scale-110" : "border-transparent")}
                     style={{ background: c }} onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => { setWritingColor(c); updateNote(current.id, { color: c }) }} title="Couleur du texte" />
