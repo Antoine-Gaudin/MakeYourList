@@ -854,7 +854,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
 
     return (
       <div className="flex-1 flex flex-col overflow-y-auto page-transition relative">
-        <div className="px-10 pt-14 pb-4 relative z-1">
+        <div className="px-4 sm:px-10 pt-8 sm:pt-14 pb-4 relative z-1">
           <div className="flex items-center gap-5 mb-10">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white shadow-lg dash-header-icon" style={{ boxShadow: '0 8px 30px rgba(139,92,246,0.35), 0 0 50px rgba(139,92,246,0.12)' }}><List size={24} /></div>
             <div>
@@ -884,7 +884,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
           )}
         </div>
 
-        <div className="px-10 pb-10 pt-4 flex-1" onMouseDown={handleBrowserMouseDown}>
+        <div className="px-4 sm:px-10 pb-6 sm:pb-10 pt-4 flex-1" onMouseDown={handleBrowserMouseDown}>
           {showNewFolder && !currentFolderId && (
             <div className="flex items-center gap-2 mb-5 animate-slide-up">
               <input type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTodoFolder(); if (e.key === 'Escape') { setShowNewFolder(false); setNewFolderName('') } }} placeholder="Nom du dossier..." autoFocus className="flex-1 px-4 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm outline-none focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] glow-ring" />
@@ -904,7 +904,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
           {/* Section label */}
           {!currentFolderId && visibleFolders.length > 0 && <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4"><FileText size={12} /> Listes</p>}
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-5 relative" ref={browserGridRef}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-5 relative" ref={browserGridRef}>
             {lassoRect && (
               <div className="fixed border border-violet-500/50 bg-violet-500/10 rounded-sm pointer-events-none z-50" style={{ left: lassoRect.x, top: lassoRect.y, width: lassoRect.w, height: lassoRect.h }} />
             )}
@@ -934,7 +934,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                   <span className="text-sm font-semibold text-center">{f.name}</span>
                   <span className="text-xs text-muted-foreground">{count} liste{count !== 1 ? 's' : ''}</span>
                   {browserDragOverFolder === f.id && <span className="text-[0.6rem] text-warning font-semibold">Déposer ici</span>}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
                     <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-destructive hover:bg-destructive/10 transition-colors duration-150" onClick={e => { e.stopPropagation(); deleteTodoFolder(f.id) }}><Trash2 size={13} /></button>
                   </div>
                 </div>
@@ -982,7 +982,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                       <Link2 size={9} /><span className="max-w-[80px] truncate">{ln.title || 'Sans titre'}</span>
                     </span>
                   ) : null })()}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
                     <ShareButton itemType="list" itemId={l.id} createShareLink={createShareLink} />
                     {lists.length > 1 && <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-destructive hover:bg-destructive/10 transition-colors duration-150" onClick={e => { e.stopPropagation(); deleteList(l.id) }}><Trash2 size={13} /></button>}
                   </div>
