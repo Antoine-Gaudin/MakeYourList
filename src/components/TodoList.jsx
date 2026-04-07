@@ -1186,7 +1186,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
 
         {listViewMode === 'list' && (
           <>
-            <div className="flex gap-1.5 mb-3 flex-wrap max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1">
+            <div className="flex gap-1.5 mb-3 flex-wrap">
               <button className={cn("flex items-center gap-1.5 px-3.5 py-1.5 bg-card/80 backdrop-blur-sm border border-white/10 rounded-lg text-muted-foreground cursor-pointer text-xs transition-all duration-150 shrink-0", filterStatus === 'all' && "bg-gradient-to-r from-violet-500 to-purple-600 border-violet-500 text-white shadow-sm shadow-violet-500/20 filter-pill-active")} onClick={() => setFilterStatus('all')}>
                 Toutes <span className="text-[0.68rem] bg-foreground/8 px-1.5 py-px rounded-lg counter-animate">{counts.all}</span>
               </button>
