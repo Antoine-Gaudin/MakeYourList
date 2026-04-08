@@ -16,9 +16,9 @@ export const TAG_COLORS = [
 ]
 
 export const PLAN_LIMITS = {
-  free:    { projects: 1, lists: 3, kanbanBoards: 1, members: 1, storageMB: 50, habits: false, expenses: false, api: false, export: false },
-  student: { projects: 5, lists: 15, kanbanBoards: 5, members: 3, storageMB: 500, habits: false, expenses: false, api: true, export: false },
-  pro:     { projects: Infinity, lists: Infinity, kanbanBoards: Infinity, members: Infinity, storageMB: 5000, habits: false, expenses: false, api: true, export: true },
+  free:    { projects: 1, lists: 3, kanbanBoards: 1, diagrams: 0, members: 1, storageMB: 50, habits: false, expenses: false, api: false, export: false },
+  student: { projects: 5, lists: 15, kanbanBoards: 5, diagrams: 1, members: 3, storageMB: 500, habits: false, expenses: false, api: true, export: false },
+  pro:     { projects: Infinity, lists: Infinity, kanbanBoards: Infinity, diagrams: Infinity, members: Infinity, storageMB: 5000, habits: false, expenses: false, api: true, export: true },
 }
 
 export const PRICE_IDS = {

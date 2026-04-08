@@ -10,7 +10,16 @@ import { cn } from '../lib/utils'
 import { useProject } from '../contexts/ProjectContext'
 import { useSubscription } from '../contexts/SubscriptionContext'
 import ShareButton from './ShareButton'
+import { buildHtmlPreviewUrl } from './HtmlPreviewPage'
 import DOMPurify from 'dompurify'
+
+// Return true if the attachment is an HTML file (by mime or extension)
+const isHtmlAttachment = (att) => {
+  if (!att) return false
+  if (att.fileType === 'text/html') return true
+  const ext = att.fileName?.split('.').pop()?.toLowerCase()
+  return ext === 'html' || ext === 'htm'
+}
 
 const COLORS = ['#8b5cf6', '#f87171', '#4ade80', '#facc15', '#60a5fa', '#c084fc', '#fb923c', '#2dd4bf']
 
@@ -1251,11 +1260,16 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
             {/* Attachments panel (shown when there are attachments) */}
             {noteAttachments.length > 0 && (
               <div className="flex items-center gap-2 px-6 py-2 border-b border-white/10 bg-amber-500/3 flex-wrap text-xs text-muted-foreground">
-                <Paperclip size={11} className="text-amber-400" />
+                <Paperclip size={11} className="text-foreground" />
                 {noteAttachments.map(att => (
-                  <span key={att.id} className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[0.68rem] font-medium bg-amber-500/10 text-amber-300 group/att">
+                  <span key={att.id} className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[0.68rem] font-medium bg-amber-200 dark:bg-amber-500/10 text-foreground group/att">
                     {getFileIcon(att.fileType)}
-                    <a href={getAttachmentUrl?.(att.storagePath)} target="_blank" rel="noopener noreferrer" className="hover:underline text-inherit truncate max-w-[120px]">{att.fileName}</a>
+                    <a
+                      href={isHtmlAttachment(att) ? buildHtmlPreviewUrl(att.storagePath, att.fileName) : getAttachmentUrl?.(att.storagePath)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline text-inherit truncate max-w-[120px]"
+                    >{att.fileName}</a>
                     <span className="text-[0.55rem] text-muted-foreground/50">{formatFileSize(att.fileSize)}</span>
                     {canEdit && (
                       <button className="bg-transparent border-none cursor-pointer p-0 opacity-0 group-hover/att:opacity-100 transition-opacity text-current hover:text-destructive" onClick={() => deleteAttachment?.(att.id, att.storagePath)} title="Supprimer"><X size={10} /></button>

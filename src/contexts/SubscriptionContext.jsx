@@ -45,13 +45,14 @@ export function SubscriptionProvider({ children }) {
   const canCreateProject = (currentCount) => currentCount < limits.projects
   const canCreateList = (currentCount) => currentCount < limits.lists
   const canCreateKanbanBoard = (currentCount) => currentCount < limits.kanbanBoards
+  const canCreateDiagram = (currentCount) => currentCount < limits.diagrams
   const canInviteMember = (currentCount) => currentCount < limits.members
 
   return (
     <SubscriptionContext.Provider value={{
       subscription, plan, limits, loading,
       isPro, isStudent, isFree,
-      canCreateProject, canCreateList, canCreateKanbanBoard, canInviteMember,
+      canCreateProject, canCreateList, canCreateKanbanBoard, canCreateDiagram, canInviteMember,
       refreshSubscription: fetchSubscription,
     }}>
       {children}

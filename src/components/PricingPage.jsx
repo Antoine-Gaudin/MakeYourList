@@ -26,6 +26,7 @@ const PLANS = [
       { text: 'Thème clair / sombre', included: true },
       { text: 'Mode hors-ligne (PWA)', included: true },
       { text: 'Actions par lot', included: true },
+      { text: 'Schémas (canvas)', included: false },
       { text: 'Collaboration', included: false },
       { text: 'Accès API', included: false },
       { text: 'Export en masse', included: false },
@@ -45,6 +46,7 @@ const PLANS = [
       { text: '15 listes de tâches', included: true },
       { text: 'Notes illimitées', included: true },
       { text: '5 tableaux Kanban', included: true },
+      { text: '1 schéma (canvas)', included: true },
       { text: '500 Mo de pièces jointes', included: true },
       { text: 'Accès API complet', included: true },
 
@@ -64,6 +66,7 @@ const PLANS = [
       { text: 'Projets & listes illimités', included: true },
       { text: '5 Go de pièces jointes', included: true },
       { text: 'Membres illimités', included: true },
+      { text: 'Schémas illimités', included: true },
       { text: 'Export en masse', included: true },
     ],
   },
@@ -73,6 +76,7 @@ const COMPARISON_ROWS = [
   { label: 'Projets', free: '1', student: '5', pro: 'Illimité' },
   { label: 'Listes de tâches', free: '3', student: '15', pro: 'Illimité' },
   { label: 'Tableaux Kanban', free: '1', student: '5', pro: 'Illimité' },
+  { label: 'Schémas (canvas)', free: '—', student: '1', pro: 'Illimité' },
   { label: 'Notes', free: 'Illimité', student: 'Illimité', pro: 'Illimité' },
   { label: 'Membres par projet', free: '1', student: '3', pro: 'Illimité' },
   { label: 'Pièces jointes', free: '50 Mo', student: '500 Mo', pro: '5 Go' },
@@ -106,6 +110,10 @@ const FAQ = [
   {
     q: 'Que se passe-t-il si je dépasse les limites de mon plan ?',
     a: 'Vous ne perdez jamais vos données existantes. Simplement, vous ne pourrez pas créer de nouveaux projets, listes ou boards au-delà de la limite. Un message vous invitera à passer au plan supérieur.',
+  },
+  {
+    q: 'Qu\'est-ce que l\'outil Schéma ?',
+    a: 'L\'outil Schéma vous permet de créer des diagrammes et visuels (formes, zones de texte, flèches) pour structurer vos projets ou idées. Le plan Étudiant inclut 1 schéma, le plan Pro en propose en illimité.',
   },
 ]
 

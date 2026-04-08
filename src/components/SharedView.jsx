@@ -1,11 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { usePageMeta } from '../hooks/usePageMeta'
-import { FileText, Columns3, StickyNote, CheckSquare, Circle, Check, Clock, AlertCircle, Star, ChevronRight, XCircle, ArrowLeft, Link2, Calendar, Paperclip, File, Image } from 'lucide-react'
+import { FileText, Columns3, StickyNote, CheckSquare, Circle, Check, Clock, AlertCircle, Star, ChevronRight, XCircle, ArrowLeft, Link2, Calendar, Paperclip, File, Image, Image as ImageIcon, PenTool, X, List } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { PRIORITIES, TAG_COLORS } from '../lib/constants'
 import Loader from './Loader'
+import { buildHtmlPreviewUrl } from './HtmlPreviewPage'
+import { ReactFlow, ReactFlowProvider, useNodesState, useEdgesState, useReactFlow } from '@xyflow/react'
+import { getStroke } from 'perfect-freehand'
+import '@xyflow/react/dist/style.css'
+
+const isHtmlAtt = (att) => {
+  if (!att) return false
+  if (att.file_type === 'text/html' || att.fileType === 'text/html') return true
+  const name = att.file_name || att.fileName || ''
+  const ext = name.split('.').pop()?.toLowerCase()
+  return ext === 'html' || ext === 'htm'
+}
 
 const STATUS_LABELS = { todo: 'A faire', doing: 'En cours', done: 'Termine' }
 
@@ -46,19 +59,20 @@ function SharedNote({ data }) {
       {attachments.length > 0 && (
         <div className="mt-8 pt-6 border-t border-white/10">
           <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
-            <Paperclip size={13} className="text-amber-400" />
-            <span className="font-semibold text-amber-400">{attachments.length} pièce{attachments.length > 1 ? 's' : ''} jointe{attachments.length > 1 ? 's' : ''}</span>
+            <Paperclip size={13} className="text-foreground" />
+            <span className="font-semibold text-foreground">{attachments.length} pièce{attachments.length > 1 ? 's' : ''} jointe{attachments.length > 1 ? 's' : ''}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {attachments.map(att => {
-              const url = supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl
+              const rawUrl = supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl
+              const href = isHtmlAtt(att) ? buildHtmlPreviewUrl(att.storage_path, att.file_name) : rawUrl
               return (
                 <a
                   key={att.id}
-                  href={url}
+                  href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[0.72rem] font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors no-underline"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[0.72rem] font-medium bg-amber-200 dark:bg-amber-500/10 text-foreground hover:bg-amber-300 dark:hover:bg-amber-500/20 transition-colors no-underline"
                 >
                   {getFileIcon(att.file_type)}
                   <span className="truncate max-w-[160px]">{att.file_name}</span>
@@ -359,13 +373,375 @@ function SharedKanban({ data }) {
   )
 }
 
+// ============== SHARED DIAGRAM (read-only React Flow) ==============
+function ROShapeNode({ data }) {
+  const shape = data.shape || 'rectangle'
+  const color = data.color || '#8b5cf6'
+  const fill = color + '25'
+  const renderShape = () => {
+    if (shape === 'circle') return <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none"><ellipse cx="50" cy="50" rx="48" ry="48" fill={fill} stroke={color} strokeWidth={2} /></svg>
+    if (shape === 'diamond') return <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points="50,2 98,50 50,98 2,50" fill={fill} stroke={color} strokeWidth={2} /></svg>
+    if (shape === 'hexagon') return <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points="25,2 75,2 98,50 75,98 25,98 2,50" fill={fill} stroke={color} strokeWidth={2} /></svg>
+    if (shape === 'triangle') return <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points="50,2 98,98 2,98" fill={fill} stroke={color} strokeWidth={2} /></svg>
+    return <div className="w-full h-full rounded-xl border-2" style={{ backgroundColor: fill, borderColor: color }} />
+  }
+  return (
+    <div className="w-full h-full relative" style={{ minWidth: 60, minHeight: 40 }}>
+      {renderShape()}
+      <div className="absolute inset-0 flex items-center justify-center text-sm font-medium pointer-events-none" style={{ color }}>{data.label || ''}</div>
+    </div>
+  )
+}
+function ROTextNode({ data }) {
+  return <div className="w-full h-full px-3 py-2 text-sm" style={{ color: data.color || '#ffffff', fontSize: data.fontSize || 14, whiteSpace: 'pre-wrap', wordBreak: 'break-word', minWidth: 120, minHeight: 40 }}>{data.label || ''}</div>
+}
+function ROImageNode({ data }) {
+  return <div className="w-full h-full rounded-xl overflow-hidden border-2 border-border">{data.src ? <img src={data.src} alt={data.label || ''} className="w-full h-full object-contain" /> : <div className="w-full h-full flex items-center justify-center text-muted-foreground bg-card/60"><ImageIcon size={24} /></div>}</div>
+}
+function ROFreehandNode({ data }) {
+  const points = data.points || []
+  if (!points.length) return null
+  const stroke = getStroke(points, { size: data.strokeWidth || 3, thinning: 0.5, smoothing: 0.5, streamline: 0.5 })
+  const pathData = stroke.reduce((acc, [x, y], i) => acc + `${i === 0 ? 'M' : 'L'} ${x} ${y}`, '') + ' Z'
+  return <svg className="w-full h-full overflow-visible" style={{ minWidth: 20, minHeight: 20 }}><path d={pathData} fill={data.color || '#8b5cf6'} opacity={0.8} /></svg>
+}
+function ROPolygonNode({ data }) {
+  const vertices = data.vertices || []
+  if (vertices.length < 2) return null
+  const isPath = data.mode === 'path'
+  const xs = vertices.map(v => v.x), ys = vertices.map(v => v.y)
+  const minX = Math.min(...xs), minY = Math.min(...ys)
+  const w = Math.max(...xs) - minX || 1, h = Math.max(...ys) - minY || 1, pad = 10
+  const pointsStr = vertices.map(v => `${v.x - minX + pad},${v.y - minY + pad}`).join(' ')
+  return <svg width={w + pad * 2} height={h + pad * 2} className="overflow-visible">
+    {isPath
+      ? <polyline points={pointsStr} fill="none" stroke={data.color || '#8b5cf6'} strokeWidth={data.thickness || 2} strokeLinecap="round" strokeLinejoin="round" />
+      : <polygon points={pointsStr} fill={(data.color || '#8b5cf6') + '60'} stroke={data.color || '#8b5cf6'} strokeWidth={2} strokeLinejoin="round" />}
+  </svg>
+}
+function ROMarkerNode({ data }) {
+  const color = data.color || '#8b5cf6'
+  return <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: color, border: '2px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, boxShadow: `0 0 0 2px ${color}` }}>{data.label}</div>
+}
+function ROLineNode({ data }) {
+  const ref = useRef(null)
+  const [dims, setDims] = useState({ w: 100, h: 100 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) setDims({ w: width, h: height })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  const { w, h } = dims
+  const pad = 8
+  const sx = data.flipX ? w - pad : pad, sy = data.flipY ? h - pad : pad
+  const ex = data.flipX ? pad : w - pad, ey = data.flipY ? pad : h - pad
+  const dx = Math.abs(ex - sx), dy = Math.abs(ey - sy)
+  let pts
+  if (dy < 5) pts = `${sx},${sy} ${ex},${ey}`
+  else if (dx < 5) pts = `${sx},${sy} ${ex},${ey}`
+  else if (dx >= dy) pts = `${sx},${sy} ${ex},${sy} ${ex},${ey}`
+  else pts = `${sx},${sy} ${sx},${ey} ${ex},${ey}`
+  return <div ref={ref} className="w-full h-full" style={{ minWidth: 2, minHeight: 2 }}>
+    <svg className="overflow-visible" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+      <polyline points={pts} fill="none" stroke={data.color || '#8b5cf6'} strokeWidth={data.thickness || 2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  </div>
+}
+function RONoteRefNode({ data }) {
+  const color = data.color || '#8b5cf6'
+  return (
+    <div className="w-full h-full rounded-xl border-2 overflow-hidden cursor-pointer flex items-center gap-2 px-3 py-2" style={{ borderColor: color + '60', background: `linear-gradient(135deg, ${color}15, ${color}08)`, minWidth: 140 }}>
+      <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ background: color + '25', color }}><StickyNote size={11} /></div>
+      <span className="text-xs font-semibold truncate" style={{ color }}>{data.noteTitle || 'Note'}</span>
+    </div>
+  )
+}
+function ROListRefNode({ data }) {
+  const color = data.color || '#60a5fa'
+  const count = data.listTaskCount ?? 0
+  return (
+    <div className="w-full h-full rounded-xl border-2 overflow-hidden cursor-pointer flex items-center gap-2 px-3 py-2" style={{ borderColor: color + '50', background: `linear-gradient(135deg, ${color}10, transparent)`, minWidth: 140 }}>
+      <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ background: color + '25', color }}><List size={11} /></div>
+      <span className="text-xs font-semibold truncate" style={{ color }}>{data.listName || 'Liste'}</span>
+      <span className="text-[0.55rem] px-1.5 py-0.5 rounded-full ml-auto shrink-0" style={{ background: color + '18', color }}>{count}</span>
+    </div>
+  )
+}
+const roNodeTypes = { shape: ROShapeNode, text: ROTextNode, image: ROImageNode, freehand: ROFreehandNode, polygon: ROPolygonNode, marker: ROMarkerNode, line: ROLineNode, noteRef: RONoteRefNode, listRef: ROListRefNode }
+
+// ============== ANIMATED DOTS BACKGROUND ==============
+const WAVE_COLORS = [
+  [139, 92, 246],  // violet
+  [6, 182, 212],   // cyan
+  [244, 114, 182], // rose
+  [52, 211, 153],  // emerald
+  [251, 146, 60],  // amber
+  [96, 165, 250],  // blue
+  [249, 115, 22],  // orange
+  [167, 139, 250], // lavender
+]
+
+function AnimatedDots({ isDark }) {
+  const canvasRef = useRef(null)
+  const { getViewport } = useReactFlow()
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const parent = canvas.parentElement
+    if (!parent) return
+    const ctx = canvas.getContext('2d')
+    let animId
+    let w = 0, h = 0
+    const dpr = window.devicePixelRatio || 1
+
+    const resize = () => {
+      w = parent.clientWidth
+      h = parent.clientHeight
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    resize()
+    const ro = new ResizeObserver(resize)
+    ro.observe(parent)
+
+    const GAP = 20
+    const WAVE_INTERVAL = 420000
+    const WAVE_TRAVEL_MS = 8000
+    const WW = 350
+
+    const draw = (time) => {
+      if (!w || !h) { animId = requestAnimationFrame(draw); return }
+      const { x: vpX, y: vpY, zoom } = getViewport()
+      ctx.clearRect(0, 0, w, h)
+
+      const gap = GAP * zoom
+      if (gap < 4) { animId = requestAnimationFrame(draw); return }
+
+      const ox = ((vpX % gap) + gap) % gap
+      const oy = ((vpY % gap) + gap) % gap
+      const baseR = Math.max(0.8, 1.5 * Math.min(zoom, 3))
+
+      const maxD = w + h
+      const totalTravel = maxD + WW * 2
+      const timeInCycle = time % WAVE_INTERVAL
+      const travelProgress = timeInCycle / WAVE_TRAVEL_MS
+      const waveActive = travelProgress <= 1.0
+      const wf = waveActive ? travelProgress * totalTravel - WW : -9999
+
+      const waveIndex = Math.floor(time / WAVE_INTERVAL) % WAVE_COLORS.length
+      const [pr, pg_, pb] = WAVE_COLORS[waveIndex]
+
+      const br = isDark ? 74 : 176, bgg = isDark ? 74 : 176, bb = isDark ? 106 : 200
+      const ba = isDark ? 0.5 : 0.45
+
+      for (let x = ox; x <= w; x += gap) {
+        for (let y = oy; y <= h; y += gap) {
+          let s = 0
+          if (waveActive) {
+            const wobble = Math.sin(y * 0.012 + time * 0.0008) * 80 + Math.sin(x * 0.009 + time * 0.0006) * 50
+            const d = Math.abs((x + y + wobble) - wf)
+            const t = Math.max(0, 1 - d / WW)
+            s = t * t * (3 - 2 * t)
+          }
+
+          const r = br + (pr - br) * s
+          const g = bgg + (pg_ - bgg) * s
+          const b = bb + (pb - bb) * s
+          const a = ba + (1.0 - ba) * s
+          const sz = baseR + s * baseR * 0.7
+
+          ctx.globalAlpha = a
+          ctx.fillStyle = `rgb(${r|0},${g|0},${b|0})`
+          ctx.beginPath()
+          ctx.arc(x, y, sz, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+      ctx.globalAlpha = 1
+      animId = requestAnimationFrame(draw)
+    }
+
+    animId = requestAnimationFrame(draw)
+    return () => { cancelAnimationFrame(animId); ro.disconnect() }
+  }, [isDark, getViewport])
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+    </div>
+  )
+}
+
+function useIsDark() {
+  const [isDark, setIsDark] = useState(() => document.documentElement.getAttribute('data-theme') !== 'light')
+  useEffect(() => {
+    const obs = new MutationObserver(() => setIsDark(document.documentElement.getAttribute('data-theme') !== 'light'))
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
+  return isDark
+}
+
+function SharedDiagramInner({ data }) {
+  const diagram = data
+  if (!diagram) return null
+  const initialNodes = diagram.data?.nodes || []
+  const initialEdges = diagram.data?.edges || []
+  const initialViewport = diagram.data?.viewport || { x: 0, y: 0, zoom: 1 }
+  const [nodes] = useNodesState(initialNodes)
+  const [edges] = useEdgesState(initialEdges)
+  const isDark = useIsDark()
+  const [previewNode, setPreviewNode] = useState(null)
+  const dateStr = diagram.updated_at ? new Date(diagram.updated_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null
+
+  const onNodeClick = useCallback((_, node) => {
+    if (node.type === 'noteRef' || node.type === 'listRef') {
+      setPreviewNode(node)
+    }
+  }, [])
+
+  return (
+    <div className="w-full flex flex-col" style={{ height: 'calc(100vh - 56px)' }}>
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-white/10">
+        <PenTool size={14} className="text-primary" />
+        <h1 className="text-lg font-bold text-foreground">{diagram.name || 'Sans titre'}</h1>
+        {dateStr && <span className="text-[0.65rem] text-muted-foreground ml-auto">Dernière modification : {dateStr}</span>}
+      </div>
+      <div className="flex-1 relative">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={roNodeTypes}
+          defaultViewport={initialViewport}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          onNodeClick={onNodeClick}
+          panOnDrag
+          zoomOnScroll
+          zoomOnPinch
+          fitView={!diagram.data?.viewport}
+          proOptions={{ hideAttribution: true }}
+          className="bg-background"
+        >
+          <AnimatedDots isDark={isDark} />
+        </ReactFlow>
+
+        {/* Preview popup for shared noteRef/listRef */}
+        {previewNode && createPortal(
+          <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPreviewNode(null)}>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-[480px] max-h-[70vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              {previewNode.type === 'noteRef' && (() => {
+                const d = previewNode.data
+                const color = d.color || '#8b5cf6'
+                const atts = d.attachments || []
+                return (
+                  <>
+                    <div className="flex items-center gap-2 px-4 py-3 border-b border-border" style={{ background: color + '10' }}>
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: color + '25' }}><StickyNote size={13} style={{ color }} /></div>
+                      <span className="text-sm font-semibold text-foreground flex-1 truncate">{d.noteTitle || 'Note'}</span>
+                      <button className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-accent text-muted-foreground bg-transparent border-none cursor-pointer" onClick={() => setPreviewNode(null)}><X size={14} /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-5 py-4 prose prose-sm prose-invert max-w-none text-sm text-foreground" style={{ maxHeight: '55vh' }} dangerouslySetInnerHTML={{ __html: d.noteContent || '<p class="text-muted-foreground">Aucun contenu</p>' }} />
+                    {atts.length > 0 && (
+                      <div className="px-4 py-3 border-t border-border flex flex-col gap-1.5">
+                        <div className="text-[0.65rem] font-semibold text-muted-foreground flex items-center gap-1"><Paperclip size={10} />Pièces jointes ({atts.length})</div>
+                        {atts.map((att, i) => {
+                          const sp = att.storagePath || att.storage_path
+                          const name = att.fileName || att.file_name || 'fichier'
+                          const size = att.fileSize || att.file_size
+                          const url = isHtmlAtt(att) ? buildHtmlPreviewUrl(sp, name) : supabase.storage.from('attachments').getPublicUrl(sp).data.publicUrl
+                          return (
+                            <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-accent/50 hover:bg-accent transition-colors no-underline">
+                              {(att.fileType || att.file_type || '').startsWith('image/') ? <ImageIcon size={12} className="text-emerald-400 shrink-0" /> : <File size={12} className="text-blue-400 shrink-0" />}
+                              <span className="text-xs text-foreground truncate flex-1">{name}</span>
+                              {size && <span className="text-[0.55rem] text-muted-foreground shrink-0">{formatFileSize(size)}</span>}
+                            </a>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+              {previewNode.type === 'listRef' && (() => {
+                const d = previewNode.data
+                const tasks = d.tasks || []
+                const atts = d.attachments || []
+                const doneCount = tasks.filter(t => t.status === 'done').length
+                const STATUS_COLORS_MAP = { todo: '#a78bfa', doing: '#60a5fa', done: '#4ade80' }
+                return (
+                  <>
+                    <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-blue-500/5">
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center bg-blue-500/20"><List size={13} className="text-blue-400" /></div>
+                      <span className="text-sm font-semibold text-foreground flex-1 truncate">{d.listName || 'Liste'}</span>
+                      <span className="text-[0.65rem] text-muted-foreground">{doneCount}/{tasks.length} terminée{doneCount !== 1 ? 's' : ''}</span>
+                      <button className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-accent text-muted-foreground bg-transparent border-none cursor-pointer" onClick={() => setPreviewNode(null)}><X size={14} /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-1" style={{ maxHeight: '55vh' }}>
+                      {tasks.length === 0 && <div className="text-xs text-muted-foreground/50 py-4 text-center">Aucune tâche dans cette liste</div>}
+                      {tasks.map((task, ti) => {
+                        const sc = STATUS_COLORS_MAP[task.status] || '#a78bfa'
+                        const taskAtts = atts.filter(a => (a.taskId || a.task_id) === task.id || (a.taskText === task.text))
+                        return (
+                          <div key={ti} className="flex flex-col rounded-lg hover:bg-accent/50 transition-colors">
+                            <div className="flex items-center gap-2 px-2 py-1.5">
+                              <div className="w-4 h-4 rounded-full flex items-center justify-center border-2 shrink-0" style={{ background: sc + '20', borderColor: sc + '50', color: sc }}>
+                                {task.status === 'done' ? <Check size={8} /> : task.status === 'doing' ? <Clock size={8} /> : null}
+                              </div>
+                              <span className={cn("text-xs flex-1 truncate", task.status === 'done' && 'line-through text-muted-foreground/50')}>{task.text}</span>
+                              {taskAtts.length > 0 && <Paperclip size={10} className="text-muted-foreground/50 shrink-0" />}
+                              {task.dueDate && <span className="text-[0.55rem] text-muted-foreground/50"><Calendar size={8} className="inline mr-0.5" />{new Date(task.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>}
+                            </div>
+                            {taskAtts.length > 0 && (
+                              <div className="flex flex-wrap gap-1 px-8 pb-1.5">
+                                {taskAtts.map((att, ai) => {
+                                  const sp = att.storagePath || att.storage_path
+                                  const name = att.fileName || att.file_name || 'fichier'
+                                  const url = isHtmlAtt(att) ? buildHtmlPreviewUrl(sp, name) : supabase.storage.from('attachments').getPublicUrl(sp).data.publicUrl
+                                  return (
+                                    <a key={ai} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/60 hover:bg-accent text-[0.6rem] text-foreground no-underline transition-colors">
+                                      {(att.fileType || att.file_type || '').startsWith('image/') ? <ImageIcon size={9} className="text-emerald-400" /> : <File size={9} className="text-blue-400" />}
+                                      <span className="truncate max-w-[120px]">{name}</span>
+                                    </a>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          </div>,
+          document.body
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SharedDiagram({ data }) {
+  return <ReactFlowProvider><SharedDiagramInner data={data} /></ReactFlowProvider>
+}
+
 export default function SharedView({ token }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  const TYPE_TITLES = { note: 'Note partagée', list: 'Liste partagée', kanban: 'Kanban partagé' }
+  const TYPE_TITLES = { note: 'Note partagée', list: 'Liste partagée', kanban: 'Kanban partagé', diagram: 'Schéma partagé' }
   usePageMeta({
     title: data ? TYPE_TITLES[data.type] || 'Contenu partagé' : 'Contenu partagé',
     description: 'Consultez un élément partagé sur Make Your List.',
@@ -414,8 +790,8 @@ export default function SharedView({ token }) {
     )
   }
 
-  const TYPE_LABELS = { note: 'Note partagée', list: 'Liste partagée', kanban: 'Kanban partagé' }
-  const TYPE_ICONS = { note: StickyNote, list: FileText, kanban: Columns3 }
+  const TYPE_LABELS = { note: 'Note partagée', list: 'Liste partagée', kanban: 'Kanban partagé', diagram: 'Schéma partagé' }
+  const TYPE_ICONS = { note: StickyNote, list: FileText, kanban: Columns3, diagram: PenTool }
   const TypeIcon = TYPE_ICONS[data.type] || FileText
 
   return (
@@ -432,7 +808,9 @@ export default function SharedView({ token }) {
         </div>
       </header>
 
-      {data.type === 'kanban' ? (
+      {data.type === 'diagram' ? (
+        <SharedDiagram data={data.data} />
+      ) : data.type === 'kanban' ? (
         <main className="flex flex-col flex-1 overflow-hidden px-8 py-6 max-md:px-4">
           <SharedKanban data={data.data} />
         </main>

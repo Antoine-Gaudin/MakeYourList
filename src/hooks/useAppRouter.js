@@ -5,6 +5,7 @@ const TAB_PATHS = {
   '/taches': 'todos',
   '/kanban': 'kanban',
   '/notes': 'notes',
+  '/schemas': 'diagrams',
   '/favoris': 'favorites',
   '/activite': 'activity',
   '/api': 'api',
@@ -52,6 +53,12 @@ function parseLocation(pathname) {
     if (parts[i]) { result.noteId = parts[i]; i += 1 }
   }
 
+  if (tab === 'diagrams') {
+    let i = 1
+    if (parts[i] === 'dossier' && parts[i + 1]) { result.folderId = parts[i + 1]; i += 2 }
+    if (parts[i]) { result.diagramId = parts[i]; i += 1 }
+  }
+
   if (tab === 'api' && parts[1]) {
     result.apiSection = parts[1]
   }
@@ -79,6 +86,11 @@ function buildPath(tab, params = {}) {
   if (tab === 'notes') {
     if (params.folderId) path += `/dossier/${params.folderId}`
     if (params.noteId) path += `/${params.noteId}`
+  }
+
+  if (tab === 'diagrams') {
+    if (params.folderId) path += `/dossier/${params.folderId}`
+    if (params.diagramId) path += `/${params.diagramId}`
   }
 
   if (tab === 'api' && params.apiSection) {

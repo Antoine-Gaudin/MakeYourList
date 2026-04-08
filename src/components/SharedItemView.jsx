@@ -4,6 +4,14 @@ import { StickyNote, FileText, Columns3, CheckSquare, Circle, Check, Clock, Star
 import { cn } from '../lib/utils'
 import { PRIORITIES, TAG_COLORS } from '../lib/constants'
 import Loader from './Loader'
+import { buildHtmlPreviewUrl } from './HtmlPreviewPage'
+
+const isHtmlAtt = (att) => {
+  if (!att) return false
+  if (att.file_type === 'text/html') return true
+  const ext = (att.file_name || '').split('.').pop()?.toLowerCase()
+  return ext === 'html' || ext === 'htm'
+}
 
 const STATUS_ICONS = { todo: Circle, doing: Clock, done: Check }
 const PRIORITY_COLORS = { low: '#51cf66', medium: '#ffd43b', high: '#ff6b6b', urgent: '#e03131' }
@@ -134,19 +142,20 @@ function SharedNoteContent({ note, isEditor, attachments = [] }) {
       {attachments.length > 0 && (
         <div className="mt-8 pt-6 border-t border-white/10">
           <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
-            <Paperclip size={13} className="text-amber-400" />
-            <span className="font-semibold text-amber-400">{attachments.length} pièce{attachments.length > 1 ? 's' : ''} jointe{attachments.length > 1 ? 's' : ''}</span>
+            <Paperclip size={13} className="text-foreground" />
+            <span className="font-semibold text-foreground">{attachments.length} pièce{attachments.length > 1 ? 's' : ''} jointe{attachments.length > 1 ? 's' : ''}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {attachments.map(att => {
-              const url = supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl
+              const rawUrl = supabase.storage.from('attachments').getPublicUrl(att.storage_path).data.publicUrl
+              const href = isHtmlAtt(att) ? buildHtmlPreviewUrl(att.storage_path, att.file_name) : rawUrl
               return (
                 <a
                   key={att.id}
-                  href={url}
+                  href={href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[0.72rem] font-medium bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors no-underline"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[0.72rem] font-medium bg-amber-200 dark:bg-amber-500/10 text-foreground hover:bg-amber-300 dark:hover:bg-amber-500/20 transition-colors no-underline"
                 >
                   {getFileIcon(att.file_type)}
                   <span className="truncate max-w-[160px]">{att.file_name}</span>

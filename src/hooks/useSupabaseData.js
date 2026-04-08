@@ -12,6 +12,7 @@ export function useSupabaseData() {
   const [allTodos, setAllTodos] = useState([])
   const [notes, setNotes] = useState([])
   const [kanbanBoards, setKanbanBoards] = useState([])
+  const [diagrams, setDiagrams] = useState([])
   const [folders, setFolders] = useState([])
   const [attachments, setAttachments] = useState([])
   const [activityLog, setActivityLog] = useState([])
@@ -23,18 +24,19 @@ export function useSupabaseData() {
   const fetchAll = useCallback(async () => {
     if (!activeProjectId) {
       lastProjectId.current = null
-      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setFolders([]); setAttachments([]); setActivityLog([]); setShareLinks([])
+      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setDiagrams([]); setFolders([]); setAttachments([]); setActivityLog([]); setShareLinks([])
       setLoading(false)
       return
     }
     lastProjectId.current = activeProjectId
     setLoading(true)
 
-    const [listsRes, tasksRes, notesRes, kanbanBoardsRes, foldersRes, attachmentsRes, activityRes, shareLinksRes] = await Promise.all([
+    const [listsRes, tasksRes, notesRes, kanbanBoardsRes, diagramsRes, foldersRes, attachmentsRes, activityRes, shareLinksRes] = await Promise.all([
       supabase.from('lists').select('*').eq('project_id', activeProjectId).order('position'),
       supabase.from('tasks').select('*, subtasks(*)').eq('project_id', activeProjectId).order('position'),
       supabase.from('notes').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }),
       supabase.from('kanban_boards').select('*').eq('project_id', activeProjectId).order('position'),
+      supabase.from('diagrams').select('*').eq('project_id', activeProjectId).order('position'),
       supabase.from('folders').select('*').eq('project_id', activeProjectId).order('created_at'),
       supabase.from('attachments').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }),
       supabase.from('activity_log').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }).limit(100),
@@ -69,6 +71,13 @@ export function useSupabaseData() {
       updatedAt: new Date(b.updated_at).getTime(),
     })))
 
+    setDiagrams((diagramsRes.data || []).map(d => ({
+      id: d.id, name: d.name, data: d.data || { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      folderId: d.folder_id || null, position: d.position,
+      createdAt: new Date(d.created_at).getTime(),
+      updatedAt: new Date(d.updated_at).getTime(),
+    })))
+
     setFolders((foldersRes.data || []).map(f => ({
       id: f.id, name: f.name, type: f.type || 'note',
     })))
@@ -100,7 +109,7 @@ export function useSupabaseData() {
   useEffect(() => {
     if (!user) {
       lastProjectId.current = null
-      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setFolders([]); setAttachments([]); setActivityLog([]); setShareLinks([])
+      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setDiagrams([]); setFolders([]); setAttachments([]); setActivityLog([]); setShareLinks([])
       setLoading(false)
     }
   }, [user])
@@ -120,6 +129,7 @@ export function useSupabaseData() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lists', filter: `project_id=eq.${activeProjectId}` }, debouncedFetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notes', filter: `project_id=eq.${activeProjectId}` }, debouncedFetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_boards', filter: `project_id=eq.${activeProjectId}` }, debouncedFetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'diagrams', filter: `project_id=eq.${activeProjectId}` }, debouncedFetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'folders', filter: `project_id=eq.${activeProjectId}` }, debouncedFetchAll)
       .subscribe()
     return () => {
@@ -324,12 +334,47 @@ export function useSupabaseData() {
     setNotes(prev => prev.map(n => n.kanbanBoardId === id ? { ...n, kanbanBoardId: null } : n))
   }, [fetchAll])
 
+  // ======== MUTATORS: DIAGRAMS ========
+  const addDiagram = useCallback(async (name, folderId = null) => {
+    const { data, error } = await supabase.from('diagrams').insert({
+      project_id: activeProjectId, name, folder_id: folderId, position: Date.now(),
+      created_by: user?.id,
+    }).select().single()
+    if (!error) setDiagrams(prev => [...prev, {
+      id: data.id, name: data.name, data: data.data || { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+      folderId: data.folder_id || null, position: data.position,
+      createdAt: new Date(data.created_at).getTime(),
+      updatedAt: new Date(data.updated_at).getTime(),
+    }])
+    return data
+  }, [activeProjectId, user?.id])
+
+  const updateDiagram = useCallback(async (id, updates) => {
+    const dbUpdates = {}
+    if (updates.name !== undefined) dbUpdates.name = updates.name
+    if (updates.data !== undefined) dbUpdates.data = updates.data
+    if (updates.folderId !== undefined) dbUpdates.folder_id = updates.folderId
+    if (updates.position !== undefined) dbUpdates.position = updates.position
+    dbUpdates.updated_at = new Date().toISOString()
+    setDiagrams(prev => prev.map(d => d.id === id ? { ...d, ...updates, updatedAt: Date.now() } : d))
+    const { error } = await supabase.from('diagrams').update(dbUpdates).eq('id', id)
+    if (error) { console.error('updateDiagram failed:', error); fetchAll() }
+  }, [fetchAll])
+
+  const deleteDiagram = useCallback(async (id) => {
+    setDiagrams(prev => prev.filter(d => d.id !== id))
+    const { error } = await supabase.from('diagrams').delete().eq('id', id)
+    if (error) { console.error('deleteDiagram failed:', error); fetchAll() }
+  }, [fetchAll])
+
   // ======== MUTATORS: FOLDERS ========
   const addFolder = useCallback(async (name, type = 'note') => {
+    if (!activeProjectId) { console.error('addFolder: no activeProjectId'); return null }
     const { data, error } = await supabase.from('folders').insert({
       project_id: activeProjectId, name, type,
     }).select().single()
-    if (!error && data) {
+    if (error) { console.error('addFolder failed:', error); return null }
+    if (data) {
       setFolders(prev => [...prev, { id: data.id, name: data.name, type: data.type || type }])
     }
     return data
@@ -365,11 +410,22 @@ export function useSupabaseData() {
     }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const path = `${activeProjectId}/${itemType}/${itemId}/${Date.now()}_${safeName}`
-    const { error: uploadError } = await supabase.storage.from('attachments').upload(path, file)
+    // Guess MIME from extension when file.type is empty/unreliable (common for .html, .md, etc.)
+    const extMime = {
+      html: 'text/html', htm: 'text/html', css: 'text/css', js: 'application/javascript',
+      json: 'application/json', md: 'text/markdown', txt: 'text/plain',
+      svg: 'image/svg+xml', pdf: 'application/pdf', csv: 'text/csv', xml: 'application/xml',
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    const resolvedType = file.type || extMime[ext] || 'application/octet-stream'
+    const { error: uploadError } = await supabase.storage.from('attachments').upload(path, file, {
+      contentType: resolvedType,
+      cacheControl: '3600',
+    })
     if (uploadError) return { error: uploadError.message }
     const { data, error } = await supabase.from('attachments').insert({
       project_id: activeProjectId, item_type: itemType, item_id: itemId,
-      file_name: file.name, file_size: file.size, file_type: file.type || 'application/octet-stream',
+      file_name: file.name, file_size: file.size, file_type: resolvedType,
       storage_path: path, created_by: user.id,
     }).select().single()
     if (error) return { error: error.message }
@@ -485,12 +541,13 @@ export function useSupabaseData() {
   }, [fetchAll])
 
   return {
-    lists, allTodos, notes, kanbanBoards, folders, attachments, activityLog, loading,
+    lists, allTodos, notes, kanbanBoards, diagrams, folders, attachments, activityLog, loading,
     addList, updateList, deleteList, setLists: setListsDB,
     addTodo, updateTodo, deleteTodo, setAllTodos,
     addSubtask, updateSubtask, deleteSubtask,
     addNote, updateNote, deleteNote, setNotes,
     addKanbanBoard, updateKanbanBoard, deleteKanbanBoard,
+    addDiagram, updateDiagram, deleteDiagram,
     addFolder, deleteFolder, updateFolder, setFolders,
     uploadAttachment, deleteAttachment, getAttachmentUrl, totalStorageUsed,
     logActivity, clearOldActivity,

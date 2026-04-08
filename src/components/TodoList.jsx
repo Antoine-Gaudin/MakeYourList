@@ -10,6 +10,14 @@ import { cn } from '../lib/utils'
 import { useProject } from '../contexts/ProjectContext'
 import { useSubscription } from '../contexts/SubscriptionContext'
 import ShareButton from './ShareButton'
+import { buildHtmlPreviewUrl } from './HtmlPreviewPage'
+
+const isHtmlAttachment = (att) => {
+  if (!att) return false
+  if (att.fileType === 'text/html') return true
+  const ext = att.fileName?.split('.').pop()?.toLowerCase()
+  return ext === 'html' || ext === 'htm'
+}
 
 const STATUSES = [
   { value: 'todo', label: 'A faire', color: '#a78bfa', bgClass: 'bg-violet-500/15', textClass: 'text-violet-400' },
@@ -1745,7 +1753,12 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                     {taskAttachments.map(a => (
                       <div key={a.id} className="flex items-center gap-2 px-2.5 py-2 bg-muted rounded-lg group/att">
                         {a.fileType?.startsWith('image/') ? <Image size={13} className="text-emerald-400 shrink-0" /> : <File size={13} className="text-blue-400 shrink-0" />}
-                        <a href={getAttachmentUrl(a.storagePath)} target="_blank" rel="noopener noreferrer" className="flex-1 text-xs text-foreground truncate hover:text-primary transition-colors">{a.fileName}</a>
+                        <a
+                          href={isHtmlAttachment(a) ? buildHtmlPreviewUrl(a.storagePath, a.fileName) : getAttachmentUrl(a.storagePath)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 text-xs text-foreground truncate hover:text-primary transition-colors"
+                        >{a.fileName}</a>
                         <span className="text-[0.6rem] text-muted-foreground shrink-0">{a.fileSize < 1024 ? a.fileSize + ' o' : a.fileSize < 1048576 ? (a.fileSize / 1024).toFixed(1) + ' Ko' : (a.fileSize / 1048576).toFixed(1) + ' Mo'}</span>
                         {canEdit && <button className="flex bg-transparent border-none text-muted-foreground/30 cursor-pointer p-0.5 opacity-0 group-hover/att:opacity-100 hover:text-destructive transition-all" onClick={() => deleteAttachment(a.id, a.storagePath)}><X size={11} /></button>}
                       </div>

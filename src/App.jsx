@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import TodoList from './components/TodoList'
 import Notes from './components/Notes'
 import KanbanBoard from './components/KanbanBoard'
+import DiagramCanvas from './components/DiagramCanvas'
 import AuthPage from './components/AuthPage'
 import ProjectSelector from './components/ProjectSelector'
 import UserProfile from './components/UserProfile'
@@ -13,6 +14,7 @@ import { MentionsLegales, Confidentialite, CGU } from './components/LegalPages'
 import CheckoutPage from './components/CheckoutPage'
 import ApiDocs from './components/ApiDocs'
 import SharedView from './components/SharedView'
+import HtmlPreviewPage from './components/HtmlPreviewPage'
 import InvitationBanner from './components/InvitationBanner'
 import SharedWithMe from './components/SharedWithMe'
 import SharedItemView from './components/SharedItemView'
@@ -24,7 +26,7 @@ import { useProject } from './contexts/ProjectContext'
 import { useSubscription } from './contexts/SubscriptionContext'
 import { useSupabaseData } from './hooks/useSupabaseData'
 import { useAppRouter } from './hooks/useAppRouter'
-import { CheckSquare, StickyNote, Menu, Search, X, Star, FileText, Columns3, Check, Info, AlertTriangle, XCircle, LogOut, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FolderKanban, WifiOff, Zap, Copy, Crown, GraduationCap, ArrowRight, Activity, Code2, Clock, Plus, Trash2, Paperclip, Edit3, Eye, BarChart3, Filter, Settings, Users, Share2, Mail } from 'lucide-react'
+import { CheckSquare, StickyNote, Menu, Search, X, Star, FileText, Columns3, Check, Info, AlertTriangle, XCircle, LogOut, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FolderKanban, WifiOff, Zap, Copy, Crown, GraduationCap, ArrowRight, Activity, Code2, Clock, Plus, Trash2, Paperclip, Edit3, Eye, BarChart3, Filter, Settings, Users, Share2, Mail, PenTool } from 'lucide-react'
 import { cn } from './lib/utils'
 
 function timeAgo(ts) {
@@ -40,21 +42,22 @@ function App() {
   const appNavigate = useNavigate()
   const { user, profile, loading: authLoading, signOut } = useAuth()
   const { activeProject, projects, members, pendingInvitations, sharedItems, loading: projectLoading } = useProject()
-  const { plan, isFree, canCreateList, canCreateKanbanBoard } = useSubscription()
+  const { plan, isFree, canCreateList, canCreateKanbanBoard, canCreateDiagram } = useSubscription()
   const {
-    lists, allTodos, notes, kanbanBoards, folders, attachments, activityLog, loading: dataLoading,
+    lists, allTodos, notes, kanbanBoards, diagrams, folders, attachments, activityLog, loading: dataLoading,
     setLists, setAllTodos, setNotes, setFolders,
     addList, updateList, deleteList,
     addTodo, updateTodo, deleteTodo,
     addSubtask, updateSubtask, deleteSubtask,
     addNote, updateNote, deleteNote,
     addKanbanBoard, updateKanbanBoard, deleteKanbanBoard,
+    addDiagram, updateDiagram, deleteDiagram,
     addFolder, deleteFolder, updateFolder,
     uploadAttachment, deleteAttachment, getAttachmentUrl, totalStorageUsed,
     logActivity, clearOldActivity, createShareLink,
     shareLinks, revokeShareLink, reactivateShareLink, deleteShareLink, updateShareLink,
   } = useSupabaseData()
-  const { tab: activeTab, notFound, listId: urlListId, taskId: urlTaskId, boardId: urlBoardId, noteId: urlNoteId, folderId: urlFolderId, apiSection: urlApiSection, json: jsonMode, goTo, replaceTo } = useAppRouter()
+  const { tab: activeTab, notFound, listId: urlListId, taskId: urlTaskId, boardId: urlBoardId, noteId: urlNoteId, diagramId: urlDiagramId, folderId: urlFolderId, apiSection: urlApiSection, json: jsonMode, goTo, replaceTo } = useAppRouter()
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
@@ -142,9 +145,10 @@ function App() {
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '1') { e.preventDefault(); goTo('todos') }
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '2') { e.preventDefault(); goTo('kanban') }
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '3') { e.preventDefault(); goTo('notes') }
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '4') { e.preventDefault(); goTo('favorites') }
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '5') { e.preventDefault(); goTo('activity') }
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '6') { e.preventDefault(); goTo('api') }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '4') { e.preventDefault(); goTo('diagrams') }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '5') { e.preventDefault(); goTo('favorites') }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '6') { e.preventDefault(); goTo('activity') }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === '7') { e.preventDefault(); goTo('api') }
       if (e.ctrlKey && e.shiftKey && e.key === 'F') { e.preventDefault(); setShowGlobalSearch(true) }
     }
     window.addEventListener('keydown', handler)
@@ -185,6 +189,11 @@ function App() {
   if (location.pathname.startsWith('/share/')) {
     const token = location.pathname.split('/share/')[1]
     if (token) return <SharedView token={token} />
+  }
+
+  // HTML preview page — public, no auth required (works for shared links too)
+  if (location.pathname === '/preview-html') {
+    return <HtmlPreviewPage />
   }
 
   // Auth gate
@@ -294,7 +303,8 @@ function App() {
     { id: 'todos', icon: <CheckSquare size={18} className="tab-icon-todos" />, label: 'Taches', kbd: '1' },
     { id: 'kanban', icon: <Columns3 size={18} className="tab-icon-kanban" />, label: 'Kanban', kbd: '2' },
     { id: 'notes', icon: <StickyNote size={18} className="tab-icon-notes" />, label: 'Notes', kbd: '3' },
-    { id: 'favorites', icon: <Star size={18} className="tab-icon-favorites" />, label: 'Favoris', kbd: '4', count: starredTasks.length + starredNotes.length },
+    { id: 'diagrams', icon: <PenTool size={18} className="tab-icon-diagrams" />, label: 'Schémas', kbd: '4' },
+    { id: 'favorites', icon: <Star size={18} className="tab-icon-favorites" />, label: 'Favoris', kbd: '5', count: starredTasks.length + starredNotes.length },
   ]
 
   const renderContent = () => {
@@ -697,6 +707,22 @@ function App() {
             showUpgradeModal={(reason) => setUpgradeReason(reason)} />
           </ErrorBoundary>
         </div>
+        <div className={cn("flex-1 flex flex-col overflow-hidden", activeTab !== 'diagrams' && "hidden")}>
+          <ErrorBoundary>
+          <DiagramCanvas diagrams={diagrams}
+            folders={folders.filter(f => f.type === 'diagram')} setFolders={setFolders}
+            dbAddDiagram={addDiagram} dbUpdateDiagram={updateDiagram} dbDeleteDiagram={deleteDiagram}
+            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder} dbUpdateFolder={updateFolder}
+            createShareLink={createShareLink} logActivity={logActivity}
+            notes={notes} allTodos={allTodos} lists={lists}
+        attachments={attachments} getAttachmentUrl={getAttachmentUrl}
+            urlDiagramId={activeTab === 'diagrams' ? urlDiagramId : undefined}
+            urlFolderId={activeTab === 'diagrams' ? urlFolderId : undefined}
+            onNavigate={(params) => replaceTo('diagrams', params)}
+            showUpgradeModal={(reason) => setUpgradeReason(reason)}
+            showToast={showToast} />
+          </ErrorBoundary>
+        </div>
         {activeTab === 'favorites' && <ErrorBoundary>{renderContent()}</ErrorBoundary>}
         {activeTab === 'shared' && (
           <ErrorBoundary>
@@ -706,7 +732,7 @@ function App() {
                   onOpenProject={() => goTo('todos')}
                   onOpenSharedItem={(item) => setViewingSharedItem(item)}
                   shareLinks={shareLinks}
-                  notes={notes} lists={lists} kanbanBoards={kanbanBoards}
+                  notes={notes} lists={lists} kanbanBoards={kanbanBoards} diagrams={diagrams}
                   revokeShareLink={revokeShareLink}
                   reactivateShareLink={reactivateShareLink}
                   deleteShareLink={deleteShareLink}

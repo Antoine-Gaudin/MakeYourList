@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { useProject } from '../contexts/ProjectContext'
 import { useAuth } from '../contexts/AuthContext'
-import { Users, Eye, Edit3, Crown, Clock, FolderOpen, ArrowRight, StickyNote, FileText, Columns3, Send, Trash2, ChevronDown, Loader2, Search, X, Mail, UserPlus, Check, Link2, Copy, Ban, Power, Infinity as InfinityIcon, Pencil } from 'lucide-react'
+import { Users, Eye, Edit3, Crown, Clock, FolderOpen, ArrowRight, StickyNote, FileText, Columns3, Send, Trash2, ChevronDown, Loader2, Search, X, Mail, UserPlus, Check, Link2, Copy, Ban, Power, Infinity as InfinityIcon, Pencil, PenTool } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 const roleLabels = { owner: 'Propriétaire', editor: 'Éditeur', viewer: 'Lecteur' }
 const roleColors = { editor: '#60a5fa', viewer: '#a78bfa' }
 const roleIcons = { editor: Edit3, viewer: Eye }
-const itemTypeLabels = { note: 'Note', list: 'Liste', kanban: 'Kanban' }
-const itemTypeIcons = { note: StickyNote, list: FileText, kanban: Columns3 }
-const itemTypeColors = { note: '#3b82f6', list: '#8b5cf6', kanban: '#f59e0b' }
+const itemTypeLabels = { note: 'Note', list: 'Liste', kanban: 'Kanban', diagram: 'Schéma' }
+const itemTypeIcons = { note: StickyNote, list: FileText, kanban: Columns3, diagram: PenTool }
+const itemTypeColors = { note: '#3b82f6', list: '#8b5cf6', kanban: '#f59e0b', diagram: '#14b8a6' }
 
 // Format a timestamp as a relative "expires in" / "expired" string
 const formatExpiry = (ts) => {
@@ -33,7 +33,7 @@ const toDatetimeLocal = (ts) => {
 
 export default function SharedWithMe({
   onOpenProject, onOpenSharedItem,
-  shareLinks = [], notes = [], lists = [], kanbanBoards = [],
+  shareLinks = [], notes = [], lists = [], kanbanBoards = [], diagrams = [],
   revokeShareLink, reactivateShareLink, deleteShareLink, updateShareLink,
   showToast,
 }) {
@@ -143,6 +143,10 @@ export default function SharedWithMe({
     if (link.itemType === 'kanban') {
       const b = kanbanBoards.find(x => x.id === link.itemId)
       return { name: b?.name || 'Kanban supprimé', exists: !!b, type: 'kanban' }
+    }
+    if (link.itemType === 'diagram') {
+      const d = diagrams.find(x => x.id === link.itemId)
+      return { name: d?.name || 'Schéma supprimé', exists: !!d, type: 'diagram' }
     }
     return { name: '—', exists: false, type: link.itemType }
   }
