@@ -5,7 +5,7 @@ import {
   Search, Filter, StickyNote,
   AlertCircle, CheckSquare, Edit3,
   FolderOpen, FolderPlus, Folder, ChevronRight, Import, ListChecks,
-  ArrowLeft, LayoutGrid, Link2, Unlink, Download, Share2, FileText
+  ArrowLeft, LayoutGrid, Link2, Unlink, Download, Share2, FileText, Tag, Palette, ExternalLink
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import ShareButton from './ShareButton'
@@ -23,15 +23,22 @@ const COLUMN_COLORS = ['#a78bfa', '#60a5fa', '#4ade80', '#f87171', '#facc15', '#
 
 const NOTE_COLORS = ['#8b5cf6', '#f87171', '#4ade80', '#facc15', '#60a5fa', '#c084fc', '#fb923c', '#2dd4bf']
 
+const LABEL_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b', '#14b8a6']
+
+const stripHtml = (html) => {
+  if (!html) return ''
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim()
+}
+
 // Map kanban column IDs to task statuses (built-in columns map directly)
 const BUILTIN_STATUS = { todo: 'todo', doing: 'doing', done: 'done' }
 
 function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
-  dbUpdateTodo, dbAddTodo, dbUpdateNote, dbAddNote, dbDeleteTodo, dbDeleteNote,
+  dbUpdateTodo, dbAddTodo, dbUpdateNote, dbAddNote, dbDeleteTodo, dbDeleteNote, dbUpdateList,
   kanbanBoards, dbAddKanbanBoard, dbUpdateKanbanBoard, dbDeleteKanbanBoard,
   kanbanFolders, dbAddFolder, dbDeleteFolder,
   createShareLink, logActivity,
-  urlBoardId, onNavigate, showUpgradeModal, showToast }) {
+  urlBoardId, onNavigate, showUpgradeModal, showToast, goTo }) {
   const { canCreateKanbanBoard, plan, limits, isFree } = useSubscription()
   const { myRole } = useProject()
   const canEdit = myRole === 'owner' || myRole === 'editor'
@@ -50,6 +57,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const [columns, setColumns] = useState(DEFAULT_COLUMNS)
   const columnsInitRef = useRef(false)
   const columnsTimerRef = useRef(null)
+  const detailRef = useRef(null)
   const [dragItem, setDragItem] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
@@ -87,14 +95,35 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const [importTab, setImportTab] = useState('tasks') // 'tasks' | 'notes'
   const [importSearch, setImportSearch] = useState('')
   const [expandedList, setExpandedList] = useState(null) // listId when a folder is open
-  // Link note picker
-  const [linkPicker, setLinkPicker] = useState(null) // taskId when open
-  const [linkSearch, setLinkSearch] = useState('')
-  // Link task picker (for notes)
-  const [taskLinkPicker, setTaskLinkPicker] = useState(null) // noteId when open
-  const [taskLinkSearch, setTaskLinkSearch] = useState('')
+  // Link list picker (for notes)
+  const [listLinkPicker, setListLinkPicker] = useState(null) // noteId when open
+  const [listLinkSearch, setListLinkSearch] = useState('')
+  // Link note picker (for lists)
+  const [noteLinkPicker, setNoteLinkPicker] = useState(null) // listId when open
+  const [noteLinkSearch, setNoteLinkSearch] = useState('')
   // Drag-drop link target (task dragged onto note or vice versa)
   const [dropLinkTarget, setDropLinkTarget] = useState(null) // { id, type } of hovered card
+  // Label system
+  const [labelManager, setLabelManager] = useState(false) // show board label manager
+  const [editingLabel, setEditingLabel] = useState(null) // { id, name, color } when editing
+  const [newLabelName, setNewLabelName] = useState('')
+  const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0])
+  const [labelPicker, setLabelPicker] = useState(null) // { cardId, cardType } when picking labels for a card
+
+  // Close detail panel on click outside
+  useEffect(() => {
+    if (!openCardId) return
+    const handler = (e) => {
+      if (!detailRef.current) return
+      if (detailRef.current.contains(e.target)) return
+      if (e.target.closest('[class*="fixed inset-0"]') || e.target.closest('[class*="z-[100]"]')) return
+      if (e.target.closest('[data-card-id]')) return
+      setOpenCardId(null)
+      setOpenCardType(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openCardId])
 
   // Touch DnD support
   const touchDragRef = useRef(null)
@@ -140,17 +169,17 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
       touchDragRef.current = null
       return
     }
-    // Cross-type touch drop → link
+    // Cross-type touch drop (list on note or vice versa) → link
     const cross = touchDragRef.current.crossTarget
     if (cross && dragItem.type !== cross.type) {
-      const taskId = dragItem.type === 'task' ? dragItem.id : cross.id
+      const listId = dragItem.type === 'list' ? dragItem.id : cross.id
       const noteId = dragItem.type === 'note' ? dragItem.id : cross.id
-      const task = allTodos.find(t => t.id === taskId)
+      const list = lists.find(l => l.id === listId)
       const note = notes.find(n => n.id === noteId)
-      if (task && note && canEdit) {
-        updateTask(taskId, { linkedNoteId: noteId })
-        logActivity('task_link', `Note "${note.title || 'Sans titre'}" liee a "${task.text || ''}"`)
-        if (showToast) showToast(`Tâche liée à la note "${note.title || 'Sans titre'}"`)
+      if (list && note && canEdit) {
+        updateList(listId, { linkedNoteId: noteId })
+        logActivity('list_link', `Liste "${list.name}" liée à la note "${note.title || 'Sans titre'}"`)
+        if (showToast) showToast(`Liste "${list.name}" liée à la note "${note.title || 'Sans titre'}"`)
       }
       setLastDroppedId(dragItem.id); setTimeout(() => setLastDroppedId(null), 400)
       resetDrag()
@@ -162,7 +191,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
     const fakeEvent = { preventDefault() {}, stopPropagation() {} }
     handleDrop(fakeEvent, dragOverCol)
     touchDragRef.current = null
-  }, [dragItem, dragOverCol, allTodos, notes, canEdit])
+  }, [dragItem, dragOverCol])
 
   // === Board browser helpers ===
   const selectedBoard = (kanbanBoards || []).find(b => b.id === selectedBoardId)
@@ -232,9 +261,9 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const deleteBoard = async (id) => {
     if (!canEdit) return
     if (!window.confirm('Supprimer ce board ? Les cartes seront retirées du kanban.')) return
-    // Reset orphaned tasks and notes before deleting the board
-    allTodos.filter(t => t.onKanban && t.kanbanBoardId === id).forEach(t => updateTask(t.id, { onKanban: false, kanbanCol: undefined, kanbanBoardId: null }))
-    notes.filter(n => n.kanbanStatus && n.kanbanBoardId === id).forEach(n => updateNote(n.id, { kanbanStatus: undefined, kanbanBoardId: null }))
+    // Reset orphaned lists and notes before deleting the board
+    lists.filter(l => l.kanbanStatus && l.kanbanBoardId === id).forEach(l => updateList(l.id, { kanbanStatus: null, kanbanBoardId: null }))
+    notes.filter(n => n.kanbanStatus && n.kanbanBoardId === id).forEach(n => updateNote(n.id, { kanbanStatus: null, kanbanBoardId: null }))
     await dbDeleteKanbanBoard(id)
     if (selectedBoardId === id) { setSelectedBoardId(null); setViewMode('browser') }
   }
@@ -252,7 +281,10 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   useEffect(() => {
     const keyHandler = (e) => {
       if (e.key === 'Escape') {
-        if (linkPicker) { setLinkPicker(null); setLinkSearch(''); return }
+        if (labelPicker) { setLabelPicker(null); return }
+        if (labelManager) { setLabelManager(false); setEditingLabel(null); return }
+        if (noteLinkPicker) { setNoteLinkPicker(null); setNoteLinkSearch(''); return }
+        if (listLinkPicker) { setListLinkPicker(null); setListLinkSearch(''); return }
         if (importModal) { setImportModal(null); return }
         if (addingIn) { setAddingIn(null); setNewText(''); return }
         if (cardMenu) { setCardMenu(null); return }
@@ -269,45 +301,42 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   // Helpers
   const updateTask = (id, updates) => { if (!canEdit) return; dbUpdateTodo(id, updates) }
   const deleteTask = (id) => { if (!canEdit) return; dbDeleteTodo(id) }
-  const cycleStatus = (id) => {
-    if (!canEdit) return
-    const task = allTodos.find(t => t.id === id)
-    const builtinCols = columns.filter(c => BUILTIN_STATUS[c.id])
-    const idx = builtinCols.findIndex(c => c.id === task.status)
-    const next = builtinCols[(idx + 1) % builtinCols.length]?.id || 'todo'
-    updateTask(id, { status: next })
-    // status cycled
-  }
   const isOverdue = (d) => d && new Date(d) < new Date(new Date().toDateString())
   const updateNote = (id, updates) => { if (!canEdit) return; dbUpdateNote(id, updates) }
   const deleteNote = (id) => { if (!canEdit) return; dbDeleteNote(id) }
+  const updateList = (id, updates) => { if (!canEdit) return; dbUpdateList(id, updates) }
 
-  // Get column ID for a task (only if explicitly on kanban)
-  const getTaskCol = (t) => t.onKanban ? (t.kanbanCol || t.status || 'todo') : null
+  // Get column ID for a list
+  const getListCol = (l) => l.kanbanStatus || null
   const getNoteCol = (n) => n.kanbanStatus
-
-  // Build set of note IDs linked to tasks (to hide them from standalone note cards)
-  const linkedNoteIds = new Set(allTodos.filter(t => t.linkedNoteId).map(t => t.linkedNoteId))
 
   // Build cards for a column
   const buildCards = (colId) => {
     const cards = []
+    // Collect IDs of notes that are linked to a list on this board (they will be shown merged)
+    const linkedNoteIds = new Set(
+      lists.filter(l => l.kanbanStatus && l.linkedNoteId && (!selectedBoardId || l.kanbanBoardId === selectedBoardId))
+        .map(l => l.linkedNoteId)
+    )
     if (filterType !== 'notes') {
-      allTodos.forEach(t => {
-        if (!t.onKanban) return
-        if (selectedBoardId && t.kanbanBoardId !== selectedBoardId) return
-        if (getTaskCol(t) !== colId) return
-        if (filterList !== 'all' && t.listId !== filterList) return
+      lists.forEach(l => {
+        if (!l.kanbanStatus) return
+        if (selectedBoardId && l.kanbanBoardId !== selectedBoardId) return
+        if (l.kanbanStatus !== colId) return
         if (search) {
           const q = search.toLowerCase()
-          if (!t.text.toLowerCase().includes(q) && !(t.notes || '').toLowerCase().includes(q) && !(t.tags || []).some(tag => tag.toLowerCase().includes(q))) return
+          const linkedNote = l.linkedNoteId ? notes.find(n => n.id === l.linkedNoteId) : null
+          if (!l.name.toLowerCase().includes(q) && !(linkedNote?.title || '').toLowerCase().includes(q)) return
         }
-        cards.push({ id: t.id, type: 'task', data: t, linkedNote: t.linkedNoteId ? notes.find(n => n.id === t.linkedNoteId) : null })
+        const listTodos = allTodos.filter(t => t.listId === l.id)
+        const doneTodos = listTodos.filter(t => t.status === 'done').length
+        const linkedNote = l.linkedNoteId ? notes.find(n => n.id === l.linkedNoteId) : null
+        cards.push({ id: l.id, type: 'list', data: l, todos: listTodos, doneTodos, linkedNote })
       })
     }
-    if (filterType !== 'tasks') {
+    if (filterType !== 'lists') {
       notes.forEach(n => {
-        if (linkedNoteIds.has(n.id)) return // hide notes already linked to a task
+        if (linkedNoteIds.has(n.id)) return // Merged into the list card
         if (selectedBoardId && n.kanbanBoardId !== selectedBoardId) return
         if (getNoteCol(n) !== colId) return
         if (search) {
@@ -338,16 +367,16 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const handleCardDrop = (e, cardType, cardId) => {
     e.preventDefault(); e.stopPropagation()
     if (!canEdit || !dragItem) { resetDrag(); return }
-    // Cross-type drop: link task ↔ note
+    // Cross-type: list on note or note on list → link
     if (dragItem.type !== cardType) {
-      const taskId = dragItem.type === 'task' ? dragItem.id : cardId
+      const listId = dragItem.type === 'list' ? dragItem.id : cardId
       const noteId = dragItem.type === 'note' ? dragItem.id : cardId
-      const task = allTodos.find(t => t.id === taskId)
+      const list = lists.find(l => l.id === listId)
       const note = notes.find(n => n.id === noteId)
-      if (task && note) {
-        updateTask(taskId, { linkedNoteId: noteId })
-        logActivity('task_link', `Note "${note.title || 'Sans titre'}" liee a "${task.text || ''}"`)
-        if (showToast) showToast(`Tâche liée à la note "${note.title || 'Sans titre'}"`)
+      if (list && note) {
+        updateList(listId, { linkedNoteId: noteId })
+        logActivity('list_link', `Liste "${list.name}" liée à la note "${note.title || 'Sans titre'}"`)  
+        if (showToast) showToast(`Liste "${list.name}" liée à la note "${note.title || 'Sans titre'}"`)
       }
       setLastDroppedId(dragItem.id); setTimeout(() => setLastDroppedId(null), 400)
       resetDrag()
@@ -359,11 +388,8 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   const handleDrop = (e, colId) => {
     e.preventDefault(); e.stopPropagation()
     if (!canEdit || !dragItem) { resetDrag(); return }
-    if (dragItem.type === 'task') {
-      const isBuiltin = !!BUILTIN_STATUS[colId]
-      updateTask(dragItem.id, isBuiltin ? { status: colId, kanbanCol: undefined } : { kanbanCol: colId })
-      const task = allTodos.find(t => t.id === dragItem.id)
-      // card dropped
+    if (dragItem.type === 'list') {
+      updateList(dragItem.id, { kanbanStatus: colId })
     } else {
       updateNote(dragItem.id, { kanbanStatus: colId })
     }
@@ -372,58 +398,18 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   }
   const resetDrag = () => { setDragItem(null); setDragOverCol(null); setDropTarget(null); setDropLinkTarget(null) }
 
-  // Add new card
-  const addCard = async (colId) => {
-    if (!canEdit || !newText.trim()) return
-    try {
-      if (addingIn?.mode === 'new-task') {
-        const listId = newList || lists[0]?.id
-        if (!listId) {
-          showToast?.('Creez d\'abord une liste dans la section Taches')
-          return
-        }
-        const isBuiltin = !!BUILTIN_STATUS[colId]
-        const newTodo = { listId, text: newText.trim(), status: isBuiltin ? colId : 'todo', priority: newPriority, dueDate: null, notes: '', tags: [], starred: false, onKanban: true, kanbanCol: isBuiltin ? null : colId, kanbanBoardId: selectedBoardId }
-        const data = await dbAddTodo(newTodo)
-        if (!data) {
-          showToast?.('Erreur lors de la creation de la tache')
-          return
-        }
-        setLastDroppedId(data.id)
-      } else {
-        const newNote = { title: newText.trim(), content: '', color: newNoteColor, folder: 'all', pinned: false, starred: false, kanbanStatus: colId, kanbanBoardId: selectedBoardId }
-        const created = await dbAddNote(newNote)
-        if (!created) {
-          showToast?.('Erreur lors de la creation de la note')
-          return
-        }
-        setLastDroppedId(created.id)
-      }
-      setNewText(''); setNewPriority('medium')
-      setTimeout(() => setLastDroppedId(null), 400)
-    } catch (err) {
-      console.error('addCard error:', err)
-      showToast?.('Erreur lors de la creation')
-    }
-  }
-
   const moveToColumn = (cardId, cardType, newColId) => {
     if (!canEdit) return
-    if (cardType === 'task') {
-      const isBuiltin = !!BUILTIN_STATUS[newColId]
-      updateTask(cardId, isBuiltin ? { status: newColId, kanbanCol: undefined } : { kanbanCol: newColId })
+    if (cardType === 'list') {
+      updateList(cardId, { kanbanStatus: newColId })
     } else {
       updateNote(cardId, { kanbanStatus: newColId })
     }
     setCardMenu(null)
   }
 
-  const removeFromKanban = (noteId) => { if (!canEdit) return; updateNote(noteId, { kanbanStatus: undefined }); setCardMenu(null) }
-  const removeTaskFromKanban = (taskId) => { if (!canEdit) return; updateTask(taskId, { onKanban: false, kanbanCol: undefined }); setCardMenu(null) }
-
-  // Link / unlink note helpers
-  const linkNote = (taskId, noteId) => { if (!canEdit) return; updateTask(taskId, { linkedNoteId: noteId }); setLinkPicker(null); setLinkSearch('') }
-  const unlinkNote = (taskId) => { if (!canEdit) return; const task = allTodos.find(t => t.id === taskId); const note = task?.linkedNoteId ? notes.find(n => n.id === task.linkedNoteId) : null; updateTask(taskId, { linkedNoteId: null }); logActivity('task_unlink', `Note "${note?.title || 'Sans titre'}" deliee de "${task?.text || ''}"`) }
+  const removeFromKanban = (noteId) => { if (!canEdit) return; updateNote(noteId, { kanbanStatus: null }); setCardMenu(null) }
+  const removeListFromKanban = (listId) => { if (!canEdit) return; updateList(listId, { kanbanStatus: null, kanbanBoardId: null }); setCardMenu(null) }
 
   // Column management
   const addColumn = () => {
@@ -434,9 +420,9 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   }
   const deleteColumn = (colId) => {
     if (!canEdit) return
-    // Move items back: tasks to todo, notes remove kanbanStatus
-    allTodos.filter(t => getTaskCol(t) === colId).forEach(t => updateTask(t.id, { status: 'todo', kanbanCol: undefined }))
-    notes.filter(n => getNoteCol(n) === colId).forEach(n => updateNote(n.id, { kanbanStatus: undefined }))
+    // Move lists back to no status, notes remove kanbanStatus
+    lists.filter(l => getListCol(l) === colId).forEach(l => updateList(l.id, { kanbanStatus: null }))
+    notes.filter(n => getNoteCol(n) === colId).forEach(n => updateNote(n.id, { kanbanStatus: null }))
     setColumns(columns.filter(c => c.id !== colId))
     setEditingCol(null)
   }
@@ -459,12 +445,12 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   }
 
   // Counts (scoped to selected board)
-  const kanbanTasks = allTodos.filter(t => t.onKanban && (!selectedBoardId || t.kanbanBoardId === selectedBoardId))
-  const totalTasks = kanbanTasks.length
-  const doneTasks = kanbanTasks.filter(t => t.status === 'done').length
+  const kanbanLists = lists.filter(l => l.kanbanStatus && (!selectedBoardId || l.kanbanBoardId === selectedBoardId))
+  const totalLists = kanbanLists.length
+  const doneLists = kanbanLists.filter(l => l.kanbanStatus === 'done').length
   const kanbanNotes = notes.filter(n => n.kanbanStatus && (!selectedBoardId || n.kanbanBoardId === selectedBoardId))
-  const totalItems = totalTasks + kanbanNotes.length
-  const doneItems = doneTasks + kanbanNotes.filter(n => n.kanbanStatus === 'done').length
+  const totalItems = totalLists + kanbanNotes.length
+  const doneItems = doneLists + kanbanNotes.filter(n => n.kanbanStatus === 'done').length
   const pct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0
 
   // === Kanban Export / Share ===
@@ -484,33 +470,20 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
     ` : ''
 
     const colsHtml = cols.map(col => {
-      const colTasks = kanbanTasks.filter(t => {
-        const cId = BUILTIN_STATUS[col.id] ? (t.status === col.id ? col.id : null) : (t.kanbanColumn === col.id ? col.id : null)
-        return cId === col.id
-      })
-      const colNotes = kanbanNotes.filter(n => {
-        if (BUILTIN_STATUS[col.id]) return n.kanbanStatus === col.id
-        return n.kanbanColumn === col.id
-      })
-      const colCount = colTasks.length + colNotes.length
+      const colLists = kanbanLists.filter(l => l.kanbanStatus === col.id)
+      const colNotes = kanbanNotes.filter(n => n.kanbanStatus === col.id)
+      const colCount = colLists.length + colNotes.length
 
       const itemsHtml = [
-        ...colTasks.map(t => {
-          const prioConfig = t.priority === 'high' ? { color: '#ef4444', label: 'Haute' } : t.priority === 'low' ? { color: '#22c55e', label: 'Basse' } : null
-          const subtasks = t.subtasks || []
-          const subsDone = subtasks.filter(s => s.done).length
-          const tags = t.tags || []
-          const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date(new Date().toDateString())
-          const prioHtml = prioConfig ? `<span class="badge" style="background:${prioConfig.color}14;color:${prioConfig.color}">${prioConfig.label}</span>` : ''
-          const dateHtml = t.dueDate ? `<span class="badge${isOverdue ? ' overdue' : ''}">${new Date(t.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>` : ''
-          const tagsHtml = tags.map(tag => `<span class="badge tag">${tag}</span>`).join('')
-          const subsHtml = subtasks.length > 0 ? `<span class="badge">${subsDone}/${subtasks.length} sous-tâches</span>` : ''
-          const notesHtml = t.notes ? `<p class="item-note">${t.notes}</p>` : ''
+        ...colLists.map(l => {
+          const listTodos = allTodos.filter(t => t.listId === l.id)
+          const doneCount = listTodos.filter(t => t.status === 'done').length
+          const totalCount = listTodos.length
+          const listPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
           return `<div class="item-card task-card">
-            <div class="item-type-badge task-type">Tâche</div>
-            <p class="item-text${t.status === 'done' ? ' done' : ''}">${t.starred ? '<span class="star">★</span> ' : ''}${t.text}</p>
-            <div class="item-badges">${prioHtml}${dateHtml}${subsHtml}${tagsHtml}</div>
-            ${notesHtml}
+            <div class="item-type-badge task-type">Liste</div>
+            <p class="item-text">${l.name}</p>
+            <div class="item-badges"><span class="badge">${doneCount}/${totalCount} tâches · ${listPct}%</span></div>
           </div>`
         }),
         ...colNotes.map(n => {
@@ -629,7 +602,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
     <div class="stats-row">
       <div class="stat-big"><span class="stat-value">${pct}%</span><span class="stat-label">complété</span></div>
       <div class="stat-pills">
-        <span class="stat-pill"><span class="stat-dot" style="background:#a78bfa"></span>${totalTasks} tâche${totalTasks > 1 ? 's' : ''}</span>
+        <span class="stat-pill"><span class="stat-dot" style="background:#a78bfa"></span>${totalLists} liste${totalLists > 1 ? 's' : ''}</span>
         <span class="stat-pill"><span class="stat-dot" style="background:#60a5fa"></span>${kanbanNotes.length} note${kanbanNotes.length > 1 ? 's' : ''}</span>
         <span class="stat-pill"><span class="stat-dot" style="background:#4ade80"></span>${doneItems} terminé${doneItems > 1 ? 's' : ''}</span>
       </div>
@@ -671,30 +644,20 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
     const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
     const colsWordHtml = columns.map(col => {
-      const colTasks = kanbanTasks.filter(t => {
-        const cId = BUILTIN_STATUS[col.id] ? (t.status === col.id ? col.id : null) : (t.kanbanColumn === col.id ? col.id : null)
-        return cId === col.id
-      })
-      const colNotes = kanbanNotes.filter(n => {
-        if (BUILTIN_STATUS[col.id]) return n.kanbanStatus === col.id
-        return n.kanbanColumn === col.id
-      })
+      const colLists = kanbanLists.filter(l => l.kanbanStatus === col.id)
+      const colNotes = kanbanNotes.filter(n => n.kanbanStatus === col.id)
 
       const itemsHtml = [
-        ...colTasks.map(t => {
-          const prioLabel = t.priority === 'high' ? ' · Priorité haute' : t.priority === 'low' ? ' · Priorité basse' : ''
-          const dueStr = t.dueDate ? ` · ${new Date(t.dueDate).toLocaleDateString('fr-FR')}` : ''
-          const subtasks = t.subtasks || []
-          const subsDone = subtasks.filter(s => s.done).length
-          const subsStr = subtasks.length > 0 ? ` · ${subsDone}/${subtasks.length} sous-tâches` : ''
-          const tags = t.tags || []
-          const tagsStr = tags.length > 0 ? ` · ${tags.join(', ')}` : ''
+        ...colLists.map(l => {
+          const listTodos = allTodos.filter(t => t.listId === l.id)
+          const doneCount = listTodos.filter(t => t.status === 'done').length
+          const totalCount = listTodos.length
+          const listPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
           return `<tr>
             <td style="width:6px;background:${col.color};padding:0;"></td>
             <td style="padding:8px 10px;border-bottom:1px solid #eee;">
-              <p style="margin:0;font-size:11pt;font-weight:bold;color:#222;${t.status === 'done' ? 'text-decoration:line-through;color:#999;' : ''}">${t.starred ? '★ ' : ''}${t.text}</p>
-              <p style="margin:2px 0 0;font-size:8.5pt;color:#999;">Tâche${prioLabel}${dueStr}${subsStr}${tagsStr}</p>
-              ${t.notes ? `<p style="margin:2px 0 0;font-size:8.5pt;color:#bbb;font-style:italic;">${t.notes}</p>` : ''}
+              <p style="margin:0;font-size:11pt;font-weight:bold;color:#222;">${l.name}</p>
+              <p style="margin:2px 0 0;font-size:8.5pt;color:#999;">Liste · ${doneCount}/${totalCount} tâches · ${listPct}%</p>
             </td>
           </tr>`
         }),
@@ -714,7 +677,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
             <td style="padding:6px 0;">
               <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col.color};margin-right:6px;vertical-align:middle;"></span>
               <span style="font-size:13pt;font-weight:bold;color:#111;">${col.label}</span>
-              <span style="font-size:9pt;color:#999;margin-left:8px;">${colTasks.length + colNotes.length} éléments</span>
+              <span style="font-size:9pt;color:#999;margin-left:8px;">${colLists.length + colNotes.length} éléments</span>
             </td>
           </tr>
         </table>
@@ -737,7 +700,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   <div class="header">
     <p style="font-size:9pt;font-weight:bold;color:#8b5cf6;letter-spacing:1px;margin-bottom:10px;">MAKE YOUR LIST</p>
     <h1 class="title">${selectedBoard.name || 'Kanban'}</h1>
-    <div class="meta">${doneItems}/${totalItems} terminé${totalItems > 1 ? 's' : ''} · ${pct}% · ${totalTasks} tâche${totalTasks > 1 ? 's' : ''} · ${kanbanNotes.length} note${kanbanNotes.length > 1 ? 's' : ''} · Exporté le ${date}</div>
+    <div class="meta">${doneItems}/${totalItems} terminé${totalItems > 1 ? 's' : ''} · ${pct}% · ${totalLists} liste${totalLists > 1 ? 's' : ''} · ${kanbanNotes.length} note${kanbanNotes.length > 1 ? 's' : ''} · Exporté le ${date}</div>
   </div>
   ${colsWordHtml}
   <div class="footer">Exporté depuis Make Your List</div>
@@ -774,8 +737,54 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
   // Reset share/export state when changing board
   useEffect(() => { setShareUrl(null); setShowSharePopup(false); setShareCopied(false); setShowKanbanExportMenu(false) }, [selectedBoardId])
 
-  const openTask = openCardType === 'task' ? allTodos.find(t => t.id === openCardId) : null
+  const openList = openCardType === 'list' ? lists.find(l => l.id === openCardId) : null
   const openNote = openCardType === 'note' ? notes.find(n => n.id === openCardId) : null
+
+  // Board labels helpers
+  const boardLabels = selectedBoard?.labels || []
+  const addBoardLabel = (name, color) => {
+    const id = `lbl-${Date.now()}`
+    const updated = [...boardLabels, { id, name, color }]
+    dbUpdateKanbanBoard(selectedBoardId, { labels: updated })
+    return id
+  }
+  const updateBoardLabel = (labelId, updates) => {
+    const updated = boardLabels.map(l => l.id === labelId ? { ...l, ...updates } : l)
+    dbUpdateKanbanBoard(selectedBoardId, { labels: updated })
+  }
+  const deleteBoardLabel = (labelId) => {
+    dbUpdateKanbanBoard(selectedBoardId, { labels: boardLabels.filter(l => l.id !== labelId) })
+    // Remove from all cards
+    lists.filter(l => (l.kanbanLabels || []).includes(labelId)).forEach(l => updateList(l.id, { kanbanLabels: l.kanbanLabels.filter(id => id !== labelId) }))
+    notes.filter(n => (n.kanbanLabels || []).includes(labelId)).forEach(n => updateNote(n.id, { kanbanLabels: n.kanbanLabels.filter(id => id !== labelId) }))
+  }
+  const toggleCardLabel = (cardId, cardType, labelId) => {
+    if (cardType === 'list') {
+      const list = lists.find(l => l.id === cardId)
+      if (!list) return
+      const current = list.kanbanLabels || []
+      const updated = current.includes(labelId) ? current.filter(id => id !== labelId) : [...current, labelId]
+      updateList(cardId, { kanbanLabels: updated })
+    } else {
+      const note = notes.find(n => n.id === cardId)
+      if (!note) return
+      const current = note.kanbanLabels || []
+      const updated = current.includes(labelId) ? current.filter(id => id !== labelId) : [...current, labelId]
+      updateNote(cardId, { kanbanLabels: updated })
+    }
+  }
+  const getCardLabels = (cardId, cardType, linkedNote) => {
+    const labels = []
+    if (cardType === 'list') {
+      const list = lists.find(l => l.id === cardId)
+      if (list) (list.kanbanLabels || []).forEach(id => { const lb = boardLabels.find(l => l.id === id); if (lb) labels.push(lb) })
+      if (linkedNote) (linkedNote.kanbanLabels || []).forEach(id => { const lb = boardLabels.find(l => l.id === id); if (lb && !labels.find(e => e.id === lb.id)) labels.push(lb) })
+    } else {
+      const note = notes.find(n => n.id === cardId)
+      if (note) (note.kanbanLabels || []).forEach(id => { const lb = boardLabels.find(l => l.id === id); if (lb) labels.push(lb) })
+    }
+    return labels
+  }
 
   // === Mini card preview for pickers ===
   const TaskMiniCard = ({ t, onClick }) => {
@@ -814,7 +823,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
           <span className="text-[0.78rem] font-medium truncate">{n.title || 'Sans titre'}</span>
           {n.starred && <Star size={9} className="text-warning fill-warning shrink-0" />}
         </div>
-        {n.content && <p className="text-[0.6rem] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-2">{n.content.slice(0, 80)}</p>}
+        {n.content && <p className="text-[0.6rem] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-2">{stripHtml(n.content).slice(0, 80)}</p>}
       </div>
       <Plus size={14} className="text-muted-foreground/30 group-hover/pick:text-primary shrink-0 mt-0.5 transition-colors" />
     </button>
@@ -924,9 +933,9 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {boardsHere.map(b => {
                   const boardCols = b.columns || DEFAULT_COLUMNS
-                  const boardTasks = allTodos.filter(t => t.onKanban && t.kanbanBoardId === b.id).length
+                  const boardListCount = lists.filter(l => l.kanbanStatus && l.kanbanBoardId === b.id).length
                   const boardNotes = notes.filter(n => n.kanbanStatus && n.kanbanBoardId === b.id).length
-                  const cardCount = boardTasks + boardNotes
+                  const cardCount = boardListCount + boardNotes
 
                   return (
                     <div key={b.id} className="group relative border border-white/10 rounded-2xl cursor-pointer board-card-hover hover:border-violet-500/30 hover:shadow-lg hover:shadow-violet-500/8"
@@ -1017,7 +1026,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
             </div>
             <div className="flex items-center gap-2.5 max-sm:hidden">
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <CheckSquare size={13} className="text-primary/60" /> {doneTasks}/{totalTasks}
+                <FolderOpen size={13} className="text-primary/60" /> {doneLists}/{totalLists}
                 <span className="text-border mx-1">|</span>
                 <StickyNote size={13} className="text-blue-400/60" /> {kanbanNotes.length}
               </div>
@@ -1036,7 +1045,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
               {search && <button className="flex bg-transparent border-none text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setSearch('')}><X size={13} /></button>}
             </div>
             <div className="flex gap-0.5 bg-muted/60 rounded-xl p-0.5 border border-white/10">
-              {[{ v: 'all', label: 'Tout' }, { v: 'tasks', label: 'Taches', icon: <CheckSquare size={12} /> }, { v: 'notes', label: 'Notes', icon: <StickyNote size={12} /> }].map(f => (
+              {[{ v: 'all', label: 'Tout' }, { v: 'tasks', label: 'Listes', icon: <FolderOpen size={12} /> }, { v: 'notes', label: 'Notes', icon: <StickyNote size={12} /> }].map(f => (
                 <button key={f.v} className={cn("flex items-center gap-1.5 px-3 py-1.5 bg-transparent border-none cursor-pointer text-xs rounded-lg transition-all duration-150", filterType === f.v ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}
                   onClick={() => setFilterType(f.v)}>{f.icon} {f.label}</button>
               ))}
@@ -1086,6 +1095,10 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
 
             <button className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground", compact && "bg-violet-500/15 text-violet-400 border-violet-500/30")}
               onClick={() => setCompact(!compact)}>{compact ? <Eye size={13} /> : <EyeOff size={13} />} <span className="hidden sm:inline">{compact ? 'Detaille' : 'Compact'}</span></button>
+            <button className="flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-xs text-muted-foreground cursor-pointer transition-all duration-150 hover:text-foreground"
+              onClick={() => { setLabelManager(true); setEditingLabel(null); setNewLabelName(''); setNewLabelColor(LABEL_COLORS[0]) }}>
+              <Tag size={13} /> <span className="hidden sm:inline">Étiquettes</span>
+            </button>
           </div>
 
           {showFilters && (
@@ -1186,92 +1199,86 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                     const showDropBefore = dropTarget?.colId === col.id && dropTarget?.index === i && dragItem && !(dragItem.id === card.id && dragItem.type === card.type)
                     const isSelected = openCardId === card.id && openCardType === card.type
 
-                    if (card.type === 'task') {
-                      const todo = card.data
-                      const prio = PRIORITIES.find(p => p.value === todo.priority)
-                      const overdue = todo.status !== 'done' && isOverdue(todo.dueDate)
-                      const subtasks = todo.subtasks || []
-                      const subsDone = subtasks.filter(s => s.done).length
-                      const tags = todo.tags || []
-                      const list = lists.find(l => l.id === todo.listId)
-                      const lnote = card.linkedNote
+                    if (card.type === 'list') {
+                      const listData = card.data
+                      const listTodos = card.todos
+                      const doneCount = card.doneTodos
+                      const totalCount = listTodos.length
+                      const listPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+                      const linkedNote = card.linkedNote
+                      const cardLabels = getCardLabels(listData.id, 'list', linkedNote)
+                      const isMerged = !!linkedNote
 
                       return (
                         <div key={menuId}>
                           {showDropBefore && <div className="kanban-drop-indicator h-0 mb-1" />}
-                          <div className={cn("group relative border border-white/10 rounded-xl cursor-pointer transition-all duration-150 hover:border-violet-500/30 hover:shadow-md hover:shadow-violet-500/5 hover:-translate-y-px", `priority-bar-${todo.priority}`, isSelected && "border-violet-500/50 shadow-lg shadow-violet-500/10 active-card-glow", isBeingDragged && "kanban-dragging", lastDroppedId === todo.id && "kanban-card-drop", dropLinkTarget?.id === todo.id && dropLinkTarget?.type === 'task' && "border-cyan-500/60 bg-cyan-500/[0.08] ring-1 ring-cyan-500/30 scale-[1.02]", compact ? "px-3 py-2" : "px-3.5 py-3")}
-                            data-card-id={todo.id} data-card-type="task"
-                            style={{ animationDelay: `${i * 40}ms` }}
-                            draggable onDragStart={e => { setCardMenu(null); setDragItem({ id: todo.id, type: 'task' }); e.dataTransfer.effectAllowed = 'move' }} onDragOver={e => handleCardDragOver(e, col.id, i, 'task', todo.id)} onDrop={e => handleCardDrop(e, 'task', todo.id)} onDragLeave={() => setDropLinkTarget(null)} onDragEnd={resetDrag}
-                            onTouchStart={e => handleTouchStart(e, { id: todo.id, type: 'task' })} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
-                            onClick={() => { setOpenCardId(todo.id); setOpenCardType('task') }}>
-                            {dropLinkTarget?.id === todo.id && dropLinkTarget?.type === 'task' && (
+                          <div className={cn("group relative border border-white/10 rounded-xl cursor-pointer transition-all duration-150 hover:border-violet-500/30 hover:shadow-md hover:shadow-violet-500/5 hover:-translate-y-px", isSelected && "border-violet-500/50 shadow-lg shadow-violet-500/10 active-card-glow", isBeingDragged && "kanban-dragging", lastDroppedId === listData.id && "kanban-card-drop", dropLinkTarget?.id === listData.id && dropLinkTarget?.type === 'list' && "border-cyan-500/60 bg-cyan-500/[0.08] ring-1 ring-cyan-500/30 scale-[1.02]", compact ? "px-3 py-2" : "px-3.5 py-3")}
+                            data-card-id={listData.id} data-card-type="list"
+                            style={isMerged ? { borderLeftColor: linkedNote.color, background: `linear-gradient(135deg, ${linkedNote.color}06, var(--color-card))`, animationDelay: `${i * 40}ms` } : { animationDelay: `${i * 40}ms` }}
+                            draggable onDragStart={e => { setCardMenu(null); setDragItem({ id: listData.id, type: 'list' }); e.dataTransfer.effectAllowed = 'move' }} onDragOver={e => handleCardDragOver(e, col.id, i, 'list', listData.id)} onDrop={e => handleCardDrop(e, 'list', listData.id)} onDragLeave={() => setDropLinkTarget(null)} onDragEnd={resetDrag}
+                            onTouchStart={e => handleTouchStart(e, { id: listData.id, type: 'list' })} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+                            onClick={() => { setOpenCardId(listData.id); setOpenCardType('list') }}>
+                            {dropLinkTarget?.id === listData.id && dropLinkTarget?.type === 'list' && (
                               <div className="absolute inset-0 flex items-center justify-center bg-cyan-500/10 rounded-xl z-10 pointer-events-none">
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 backdrop-blur-sm text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-500/30"><Link2 size={12} /> Lier la note</span>
                               </div>
                             )}
+                            {/* Labels row */}
+                            {cardLabels.length > 0 && (
+                              <div className="flex gap-1 flex-wrap mb-2">
+                                {cardLabels.map(lb => (
+                                  <span key={lb.id} className="text-[0.55rem] font-semibold px-2 py-0.5 rounded-md text-white" style={{ background: lb.color }}>{lb.name || ''}</span>
+                                ))}
+                              </div>
+                            )}
                             <div className="flex items-start gap-2.5">
-                              <button className="flex items-center justify-center w-6 h-6 rounded-full border-2 cursor-pointer shrink-0 transition-all duration-150 hover:scale-115 mt-0.5"
-                                style={{ background: col.color + '20', color: col.color, borderColor: col.color + '50', boxShadow: `0 0 8px ${col.color}15` }}
-                                onClick={e => { e.stopPropagation(); cycleStatus(todo.id) }}>
-                                {todo.status === 'done' ? <Check size={11} /> : todo.status === 'doing' ? <Clock size={11} /> : <Circle size={11} />}
-                              </button>
+                              <div className="w-8 h-8 rounded-lg shrink-0 mt-0.5 flex items-center justify-center bg-primary/15 text-primary">
+                                {isMerged ? <Link2 size={14} /> : <FolderOpen size={14} />}
+                              </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className={cn("text-[0.82rem] font-medium leading-snug break-words flex-1", todo.status === 'done' && "line-through text-muted-foreground/60")}>{todo.text}</span>
-                                  {lnote && <span className="inline-flex items-center gap-0.5 text-[0.5rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 shrink-0"><Link2 size={8} /> Liee</span>}
+                                  <button className="inline-flex items-center gap-1 text-[0.55rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 border-none cursor-pointer hover:bg-violet-500/25 transition-colors" onClick={e => { e.stopPropagation(); if (goTo) goTo('todos', { listId: listData.id }) }} title="Ouvrir la liste"><FolderOpen size={8} /> Liste <ExternalLink size={7} /></button>
+                                  {isMerged && <button className="inline-flex items-center gap-1 text-[0.55rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border-none cursor-pointer hover:brightness-125 transition-all" style={{ background: linkedNote.color + '15', color: linkedNote.color }} onClick={e => { e.stopPropagation(); if (goTo) goTo('notes', { noteId: linkedNote.id }) }} title="Ouvrir la note"><StickyNote size={8} /> Note <ExternalLink size={7} /></button>}
                                 </div>
+                                <span className="block text-[0.82rem] font-medium leading-snug break-words mt-1">{listData.name}</span>
+                                {isMerged && !compact && <span className="block text-[0.72rem] leading-snug break-words mt-0.5" style={{ color: linkedNote.color + 'cc' }}>{linkedNote.title || 'Sans titre'}</span>}
                                 {!compact && (
-                                  <>
-                                    {list && <span className="inline-flex items-center gap-1 text-[0.6rem] text-muted-foreground/70 bg-muted/60 px-1.5 py-0.5 rounded mt-1.5"><CheckSquare size={8} /> {list.name}</span>}
-                                    {tags.length > 0 && <div className="flex flex-wrap gap-1 mt-1.5">{tags.map(tagName => { const tc = TAG_COLORS.find(t => t.name === tagName); return <span key={tagName} className="text-[0.6rem] px-2 py-0.5 rounded-lg font-semibold" style={{ background: (tc?.color || '#8b5cf6') + '15', color: tc?.color || '#8b5cf6' }}>{tagName}</span> })}</div>}
-                                    <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio?.color }} />
-                                      {todo.starred && <Star size={10} className="text-warning shrink-0 fill-warning" />}
-                                      {todo.dueDate && <span className={cn("inline-flex items-center gap-1 text-[0.65rem]", overdue ? "text-destructive font-semibold" : "text-muted-foreground")}><Calendar size={10} />{new Date(todo.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>}
-                                      {subtasks.length > 0 && <span className="inline-flex items-center gap-1 text-[0.65rem] text-muted-foreground"><Check size={10} /> {subsDone}/{subtasks.length}<span className="inline-block w-10 h-1 bg-muted rounded-full overflow-hidden"><span className="block h-full rounded-full bg-success/70 transition-all" style={{ width: `${(subsDone / subtasks.length) * 100}%` }} /></span></span>}
-                                    </div>
-                                  </>
+                                  <div className="flex items-center gap-2 flex-wrap mt-2">
+                                    <span className="inline-flex items-center gap-1 text-[0.65rem] text-muted-foreground">
+                                      <CheckSquare size={10} /> {doneCount}/{totalCount} tâche{totalCount > 1 ? 's' : ''}
+                                    </span>
+                                    {totalCount > 0 && (
+                                      <span className="inline-block w-14 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <span className="block h-full rounded-full bg-success/70 transition-all" style={{ width: `${listPct}%` }} />
+                                      </span>
+                                    )}
+                                    {isMerged && linkedNote.starred && <Star size={9} className="text-warning fill-warning" />}
+                                  </div>
                                 )}
-                                {compact && <div className="flex items-center gap-1.5 mt-1"><span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio?.color }} />{todo.starred && <Star size={9} className="text-warning fill-warning" />}{todo.dueDate && <Calendar size={9} className={cn(overdue ? "text-destructive" : "text-muted-foreground/60")} />}{subtasks.length > 0 && <span className="text-[0.6rem] text-muted-foreground">{subsDone}/{subtasks.length}</span>}</div>}
+                                {isMerged && !compact && linkedNote.content && <p className="text-[0.7rem] text-muted-foreground/50 leading-snug mt-1.5 line-clamp-2">{stripHtml(linkedNote.content).slice(0, 80)}</p>}
+                                {compact && <div className="flex items-center gap-1.5 mt-1"><span className="text-[0.6rem] text-muted-foreground">{doneCount}/{totalCount}</span>{isMerged && <StickyNote size={8} style={{ color: linkedNote.color }} />}</div>}
                               </div>
                               <div className="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 shrink-0">
                                 <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/50 cursor-pointer rounded-md hover:bg-muted hover:text-foreground transition-all duration-150" onClick={e => { e.stopPropagation(); setCardMenu(cardMenu === menuId ? null : menuId) }}><MoreHorizontal size={13} /></button>
-                                <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/30 cursor-pointer rounded-md hover:text-destructive hover:bg-destructive/10 transition-all duration-150" onClick={e => { e.stopPropagation(); deleteTask(todo.id) }}><Trash2 size={11} /></button>
                               </div>
                             </div>
-                            {/* Linked note preview */}
-                            {lnote && !compact && (
-                              <div className="mt-2 pt-2 border-t border-white/8">
-                                <div className="flex items-start gap-2">
-                                  <div className="w-5 h-5 rounded-md shrink-0 flex items-center justify-center mt-0.5" style={{ background: lnote.color + '20', color: lnote.color }}><StickyNote size={10} /></div>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-[0.7rem] font-medium truncate block">{lnote.title || 'Sans titre'}</span>
-                                    {lnote.content && <p className="text-[0.6rem] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-1">{lnote.content.slice(0, 60)}</p>}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
                             {cardMenu === menuId && (
                               <div className="absolute right-0 top-full mt-1 z-50 bg-card/80 backdrop-blur-sm border border-white/10 rounded-xl shadow-xl shadow-black/20 py-1.5 min-w-[170px] animate-scale-in" onClick={e => e.stopPropagation()}>
                                 <div className="px-3 py-1.5 text-[0.65rem] text-muted-foreground/60 uppercase tracking-wider font-semibold">Deplacer vers</div>
                                 {columns.filter(c => c.id !== col.id).map(c => (
-                                  <button key={c.id} className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => moveToColumn(todo.id, 'task', c.id)}>
+                                  <button key={c.id} className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => moveToColumn(listData.id, 'list', c.id)}>
                                     <span className="w-2 h-2 rounded-full" style={{ background: c.color }} /> {c.label}
                                   </button>
                                 ))}
                                 <div className="h-px bg-white/10 mx-2 my-1" />
-                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { updateTask(todo.id, { starred: !todo.starred }); setCardMenu(null) }}>
-                                  <Star size={11} className={todo.starred ? "text-warning fill-warning" : "text-muted-foreground"} /> {todo.starred ? 'Retirer favori' : 'Favori'}
-                                </button>
-                                <div className="h-px bg-white/10 mx-2 my-1" />
-                                {todo.linkedNoteId ? (
-                                  <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { unlinkNote(todo.id); setCardMenu(null) }}><Unlink size={11} /> Delier la note</button>
-                                ) : (
-                                  <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-cyan-400 cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { setLinkPicker(todo.id); setLinkSearch(''); setCardMenu(null) }}><Link2 size={11} /> Lier une note</button>
-                                )}
-                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => removeTaskFromKanban(todo.id)}><X size={11} /> Retirer du kanban</button>
-                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-destructive cursor-pointer text-xs hover:bg-destructive/10 transition-colors duration-150 text-left" onClick={() => { deleteTask(todo.id); setCardMenu(null) }}><Trash2 size={11} /> Supprimer definitivement</button>
+                                {boardLabels.length > 0 && <>
+                                  <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { setLabelPicker({ cardId: listData.id, cardType: 'list' }); setCardMenu(null) }}>
+                                    <Tag size={11} /> Étiquettes
+                                  </button>
+                                  <div className="h-px bg-white/10 mx-2 my-1" />
+                                </>}
+                                {isMerged && <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { updateList(listData.id, { linkedNoteId: null }); setCardMenu(null); if (showToast) showToast('Carte scindée') }}><Unlink size={11} /> Scinder liste / note</button>}
+                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => removeListFromKanban(listData.id)}><X size={11} /> Retirer du kanban</button>
                               </div>
                             )}
                           </div>
@@ -1279,8 +1286,9 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                       )
                     }
 
-                    // NOTE CARD
+                    // NOTE CARD (standalone, not merged)
                     const note = card.data
+                    const noteLabels = getCardLabels(note.id, 'note', null)
                     return (
                       <div key={menuId}>
                         {showDropBefore && <div className="kanban-drop-indicator h-0 mb-1" />}
@@ -1292,15 +1300,23 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                           onClick={() => { setOpenCardId(note.id); setOpenCardType('note') }}>
                           {dropLinkTarget?.id === note.id && dropLinkTarget?.type === 'note' && (
                             <div className="absolute inset-0 flex items-center justify-center bg-cyan-500/10 rounded-xl z-10 pointer-events-none">
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 backdrop-blur-sm text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-500/30"><Link2 size={12} /> Lier la tâche</span>
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/20 backdrop-blur-sm text-cyan-400 text-xs font-semibold rounded-lg border border-cyan-500/30"><Link2 size={12} /> Lier la liste</span>
+                            </div>
+                          )}
+                          {/* Note labels row */}
+                          {noteLabels.length > 0 && (
+                            <div className="flex gap-1 flex-wrap mb-2">
+                              {noteLabels.map(lb => (
+                                <span key={lb.id} className="text-[0.55rem] font-semibold px-2 py-0.5 rounded-md text-white" style={{ background: lb.color }}>{lb.name || ''}</span>
+                              ))}
                             </div>
                           )}
                           <div className="flex items-start gap-2.5">
                             <div className="w-6 h-6 rounded-lg shrink-0 mt-0.5 flex items-center justify-center" style={{ background: note.color + '20', color: note.color }}><StickyNote size={12} /></div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5"><span className="text-[0.55rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: note.color + '15', color: note.color }}>Note</span>{note.starred && <Star size={9} className="text-warning fill-warning" />}</div>
+                              <div className="flex items-center gap-1.5"><button className="inline-flex items-center gap-1 text-[0.55rem] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border-none cursor-pointer hover:brightness-125 transition-all" style={{ background: note.color + '15', color: note.color }} onClick={e => { e.stopPropagation(); if (goTo) goTo('notes', { noteId: note.id }) }} title="Ouvrir la note"><StickyNote size={8} /> Note <ExternalLink size={7} /></button>{note.starred && <Star size={9} className="text-warning fill-warning" />}</div>
                               <span className="block text-[0.82rem] font-medium leading-snug break-words mt-1">{note.title || 'Sans titre'}</span>
-                              {!compact && note.content && <p className="text-[0.7rem] text-muted-foreground/60 leading-snug mt-1 line-clamp-2">{note.content.slice(0, 100)}</p>}
+                              {!compact && note.content && <p className="text-[0.7rem] text-muted-foreground/60 leading-snug mt-1 line-clamp-2">{stripHtml(note.content).slice(0, 100)}</p>}
                             </div>
                             <div className="flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 shrink-0">
                               <button className="flex items-center justify-center w-6 h-6 bg-transparent border-none text-muted-foreground/50 cursor-pointer rounded-md hover:bg-muted hover:text-foreground transition-all duration-150" onClick={e => { e.stopPropagation(); setCardMenu(cardMenu === menuId ? null : menuId) }}><MoreHorizontal size={13} /></button>
@@ -1320,13 +1336,19 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                                 <Star size={11} className={note.starred ? "text-warning fill-warning" : "text-muted-foreground"} /> {note.starred ? 'Retirer favori' : 'Favori'}
                               </button>
                               <div className="h-px bg-white/10 mx-2 my-1" />
-                              {(() => { const noteTasks = allTodos.filter(t => t.linkedNoteId === note.id); return noteTasks.length > 0 ? (
-                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { noteTasks.forEach(t => updateTask(t.id, { linkedNoteId: null })); setCardMenu(null); if (showToast) showToast(`${noteTasks.length} tâche${noteTasks.length > 1 ? 's' : ''} délié${noteTasks.length > 1 ? 'es' : 'e'}`) }}>
-                                  <Unlink size={11} /> Délier {noteTasks.length} tâche{noteTasks.length > 1 ? 's' : ''}
+                              {boardLabels.length > 0 && <>
+                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { setLabelPicker({ cardId: note.id, cardType: 'note' }); setCardMenu(null) }}>
+                                  <Tag size={11} /> Étiquettes
+                                </button>
+                                <div className="h-px bg-white/10 mx-2 my-1" />
+                              </>}
+                              {(() => { const noteLists = lists.filter(l => l.linkedNoteId === note.id); return noteLists.length > 0 ? (
+                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { noteLists.forEach(l => updateList(l.id, { linkedNoteId: null })); setCardMenu(null); if (showToast) showToast(`${noteLists.length} liste${noteLists.length > 1 ? 's' : ''} délié${noteLists.length > 1 ? 'es' : 'e'}`) }}>
+                                  <Unlink size={11} /> Délier {noteLists.length} liste{noteLists.length > 1 ? 's' : ''}
                                 </button>
                               ) : (
-                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-cyan-400 cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { setTaskLinkPicker(note.id); setTaskLinkSearch(''); setCardMenu(null) }}>
-                                  <Link2 size={11} /> Lier une tâche
+                                <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-cyan-400 cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => { setListLinkPicker(note.id); setListLinkSearch(''); setCardMenu(null) }}>
+                                  <Link2 size={11} /> Lier une liste
                                 </button>
                               ) })()}
                               <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border-none text-muted-foreground cursor-pointer text-xs hover:bg-accent transition-colors duration-150 text-left" onClick={() => removeFromKanban(note.id)}><X size={11} /> Retirer du kanban</button>
@@ -1344,45 +1366,12 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                   {/* MENU */}
                   {addingIn?.status === col.id && addingIn.mode === 'menu' && (
                     <div className="kanban-add-card flex flex-col gap-0.5">
-                      <div className="text-[0.6rem] text-muted-foreground/50 uppercase tracking-wider font-semibold px-2 py-1">Creer</div>
-                      <button className="flex items-center gap-2.5 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent rounded-lg transition-colors duration-150 text-left" onClick={() => setAddingIn({ status: col.id, mode: 'new-task' })}>
-                        <div className="w-5 h-5 rounded-md bg-violet-500/15 flex items-center justify-center text-violet-400"><CheckSquare size={10} /></div> Nouvelle tache
-                      </button>
-                      <button className="flex items-center gap-2.5 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent rounded-lg transition-colors duration-150 text-left" onClick={() => setAddingIn({ status: col.id, mode: 'new-note' })}>
-                        <div className="w-5 h-5 rounded-md bg-blue-500/15 flex items-center justify-center text-blue-400"><StickyNote size={10} /></div> Nouvelle note
-                      </button>
-                      <div className="h-px bg-white/10 my-0.5" />
                       <button className="flex items-center gap-2.5 w-full px-3 py-2 bg-transparent border-none text-foreground cursor-pointer text-xs hover:bg-accent rounded-lg transition-colors duration-150 text-left" onClick={() => { setImportModal({ colId: col.id }); setImportTab('tasks'); setImportSearch(''); setExpandedList(null); setAddingIn(null) }}>
                         <div className="w-5 h-5 rounded-md bg-primary/15 flex items-center justify-center text-primary"><Import size={10} /></div> Importer existant
                       </button>
                       <button className="mt-1 px-2.5 py-1 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-lg text-muted-foreground text-[0.65rem] cursor-pointer hover:text-foreground transition-colors duration-150 self-end" onClick={() => setAddingIn(null)}>Annuler</button>
                     </div>
                   )}
-
-                  {/* NEW TASK / NOTE */}
-                  {addingIn?.status === col.id && (addingIn.mode === 'new-task' || addingIn.mode === 'new-note') && (
-                    <div className="kanban-add-card flex flex-col gap-2">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        {addingIn.mode === 'new-task' ? <><CheckSquare size={12} className="text-violet-400" /> Nouvelle tache</> : <><StickyNote size={12} className="text-blue-400" /> Nouvelle note</>}
-                        <button className="ml-auto text-[0.6rem] text-primary cursor-pointer bg-transparent border-none hover:underline" onClick={() => setAddingIn({ status: col.id, mode: 'menu' })}>Retour</button>
-                      </div>
-                      <textarea value={newText} onChange={e => setNewText(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addCard(col.id) }; if (e.key === 'Escape') { setAddingIn(null); setNewText('') } }}
-                        placeholder={addingIn.mode === 'new-task' ? "Titre de la tache..." : "Titre de la note..."} autoFocus rows={2}
-                        className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm outline-none resize-none font-[inherit] leading-snug focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] transition-colors duration-150 glow-ring" />
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {addingIn.mode === 'new-task' && <>
-                          <div className="flex gap-1">{PRIORITIES.map(p => <button key={p.value} className={cn("w-5 h-5 rounded-full border-2 transition-all duration-150 cursor-pointer hover:scale-110", newPriority === p.value ? "scale-110 shadow-sm" : "opacity-50")} style={{ background: newPriority === p.value ? p.color + '30' : 'transparent', borderColor: p.color }} onClick={() => setNewPriority(p.value)} title={p.label} />)}</div>
-                          {lists.length > 1 && <select className="px-2 py-1 bg-input border border-white/10 rounded-lg text-foreground text-[0.65rem] outline-none cursor-pointer focus:border-violet-500" value={newList || lists[0]?.id} onChange={e => setNewList(e.target.value)}>{lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>}
-                        </>}
-                        {addingIn.mode === 'new-note' && <div className="flex gap-1">{NOTE_COLORS.slice(0, 6).map(c => <button key={c} className={cn("w-5 h-5 rounded-full border-2 transition-all duration-150 cursor-pointer hover:scale-110", newNoteColor === c ? "scale-110 shadow-sm" : "opacity-50")} style={{ background: newNoteColor === c ? c + '40' : c + '20', borderColor: c }} onClick={() => setNewNoteColor(c)} />)}</div>}
-                        <div className="flex-1" />
-                        <button className="px-2.5 py-1 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-lg text-muted-foreground text-[0.65rem] cursor-pointer hover:text-foreground" onClick={() => { setAddingIn(null); setNewText('') }}>Annuler</button>
-                        <button className="px-2.5 py-1 bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25 border-none rounded-lg text-[0.65rem] cursor-pointer font-semibold btn-glow disabled:opacity-40" disabled={!newText.trim()} onClick={() => addCard(col.id)}>Ajouter</button>
-                      </div>
-                    </div>
-                  )}
-
 
                   {(!addingIn || addingIn.status !== col.id) && (
                     <button className="flex items-center gap-2 w-full px-3 py-2 bg-transparent border border-transparent rounded-xl text-muted-foreground/50 cursor-pointer text-xs transition-all duration-150 hover:bg-accent/50 hover:text-muted-foreground hover:border-white/10"
@@ -1427,25 +1416,16 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
         const col = columns.find(c => c.id === colId)
         const q = importSearch.toLowerCase()
 
-        // Tasks grouped by list (folders) — only tasks NOT already on kanban
-        const taskGroups = lists.map(l => ({
-          ...l,
-          tasks: allTodos.filter(t => t.listId === l.id && !t.onKanban).filter(t => !q || t.text.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q) || (t.tags || []).some(tag => tag.toLowerCase().includes(q)))
-        })).filter(l => l.tasks.length > 0)
-        const totalAvailTasks = taskGroups.reduce((s, g) => s + g.tasks.length, 0)
+        // Lists NOT already on this kanban board
+        const availLists = lists.filter(l => !l.kanbanStatus || l.kanbanBoardId !== selectedBoardId).filter(l => !q || l.name.toLowerCase().includes(q))
 
         // Notes not yet on kanban
         const availNotes = notes.filter(n => !n.kanbanStatus).filter(n => !q || (n.title || '').toLowerCase().includes(q) || (n.content || '').toLowerCase().includes(q))
 
-        const importTask = (t) => {
-          const isB = !!BUILTIN_STATUS[colId]
-          updateTask(t.id, isB ? { status: colId, kanbanCol: undefined, onKanban: true, kanbanBoardId: selectedBoardId } : { kanbanCol: colId, onKanban: true, kanbanBoardId: selectedBoardId })
-          setLastDroppedId(t.id); setTimeout(() => setLastDroppedId(null), 400)
-          if (colId === 'done') logActivity('task_done', `Tache "${t.text}" terminee`)
-        }
-        const importAllList = (g) => {
-          g.tasks.forEach(t => { const isB = !!BUILTIN_STATUS[colId]; updateTask(t.id, isB ? { status: colId, kanbanCol: undefined, onKanban: true, kanbanBoardId: selectedBoardId } : { kanbanCol: colId, onKanban: true, kanbanBoardId: selectedBoardId }) })
-          logActivity('task_move', `${g.tasks.length} taches importees`)
+        const importListItem = (l) => {
+          updateList(l.id, { kanbanStatus: colId, kanbanBoardId: selectedBoardId })
+          setLastDroppedId(l.id); setTimeout(() => setLastDroppedId(null), 400)
+          logActivity('list_move', `Liste "${l.name}" ajoutée au kanban`)
         }
         const importNote = (n) => {
           updateNote(n.id, { kanbanStatus: colId, kanbanBoardId: selectedBoardId })
@@ -1462,7 +1442,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
                 <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center text-primary"><Import size={18} /></div>
                 <div className="flex-1">
                   <h2 className="text-base font-bold">Importer dans "{col?.label}"</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">Parcourez vos taches et notes pour les ajouter a cette colonne</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Parcourez vos listes et notes pour les ajouter a cette colonne</p>
                 </div>
                 <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => setImportModal(null)}><X size={16} /></button>
               </div>
@@ -1471,7 +1451,7 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
               <div className="flex items-center gap-3 px-6 py-3 border-b border-white/10 shrink-0">
                 <div className="flex gap-0.5 bg-muted/60 rounded-xl p-0.5 border border-white/10">
                   <button className={cn("flex items-center gap-1.5 px-4 py-2 bg-transparent border-none cursor-pointer text-xs rounded-lg transition-all duration-150", importTab === 'tasks' ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground")}
-                    onClick={() => setImportTab('tasks')}><CheckSquare size={12} /> Taches <span className="ml-0.5 text-[0.6rem] opacity-70">({totalAvailTasks})</span></button>
+                    onClick={() => setImportTab('tasks')}><FolderOpen size={12} /> Listes <span className="ml-0.5 text-[0.6rem] opacity-70">({availLists.length})</span></button>
                   <button className={cn("flex items-center gap-1.5 px-4 py-2 bg-transparent border-none cursor-pointer text-xs rounded-lg transition-all duration-150", importTab === 'notes' ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground")}
                     onClick={() => setImportTab('notes')}><StickyNote size={12} /> Notes <span className="ml-0.5 text-[0.6rem] opacity-70">({availNotes.length})</span></button>
                 </div>
@@ -1486,33 +1466,22 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
               <div className="flex-1 overflow-y-auto p-5 min-h-0">
                 {importTab === 'tasks' && (
                   <div className="flex flex-col gap-1">
-                    {taskGroups.map(g => {
-                      const isOpen = expandedList === g.id || !!importSearch
+                    {availLists.map(l => {
+                      const listTodos = allTodos.filter(t => t.listId === l.id)
+                      const doneCount = listTodos.filter(t => t.status === 'done').length
                       return (
-                        <div key={g.id} className="rounded-xl border border-white/10 overflow-hidden">
-                          {/* Folder header */}
-                          <button className="flex items-center gap-3 w-full px-4 py-3 bg-secondary/40 border-none cursor-pointer text-left transition-all duration-150 hover:bg-secondary/70"
-                            onClick={() => setExpandedList(isOpen && !importSearch ? null : g.id)}>
-                            <ChevronRight size={14} className={cn("text-muted-foreground transition-transform duration-200", isOpen && "rotate-90")} />
-                            <FolderOpen size={15} className="text-primary/60" />
-                            <span className="text-sm font-semibold flex-1">{g.name}</span>
-                            <span className="text-[0.65rem] text-muted-foreground bg-muted px-2.5 py-0.5 rounded-lg font-semibold">{g.tasks.length} tache{g.tasks.length > 1 ? 's' : ''}</span>
-                            <button className="text-[0.65rem] text-primary cursor-pointer bg-primary/10 border-none hover:bg-primary/20 px-2.5 py-1 rounded-lg font-semibold transition-colors"
-                              onClick={e => { e.stopPropagation(); importAllList(g) }}>Tout ajouter</button>
-                          </button>
-                          {/* Tasks in folder */}
-                          {isOpen && (
-                            <div className="flex flex-col gap-1 p-2 bg-card/50">
-                              {g.tasks.map(t => <TaskMiniCard key={t.id} t={t} onClick={() => importTask(t)} />)}
-                            </div>
-                          )}
-                        </div>
+                        <button key={l.id} className="flex items-center gap-3 w-full px-4 py-3 bg-secondary/40 border border-white/10 rounded-xl cursor-pointer text-left transition-all duration-150 hover:bg-secondary/70 hover:border-violet-500/30"
+                          onClick={() => importListItem(l)}>
+                          <FolderOpen size={15} className="text-primary/60 shrink-0" />
+                          <span className="text-sm font-semibold flex-1">{l.name}</span>
+                          <span className="text-[0.65rem] text-muted-foreground bg-muted px-2.5 py-0.5 rounded-lg font-semibold">{doneCount}/{listTodos.length} tâche{listTodos.length > 1 ? 's' : ''}</span>
+                        </button>
                       )
                     })}
-                    {taskGroups.length === 0 && (
+                    {availLists.length === 0 && (
                       <div className="flex flex-col items-center justify-center py-14 text-muted-foreground/40">
                         <ListChecks size={32} className="mb-3 opacity-40" />
-                        <span className="text-sm">{importSearch ? 'Aucune tache correspondante' : 'Toutes les taches sont deja dans cette colonne'}</span>
+                        <span className="text-sm">{importSearch ? 'Aucune liste correspondante' : 'Toutes les listes sont deja sur le kanban'}</span>
                       </div>
                     )}
                   </div>
@@ -1542,84 +1511,149 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
       })()}
 
       {/* Detail panel */}
-      {(openTask || openNote) && (
-        <div className="w-[380px] bg-card/80 backdrop-blur-sm border-l border-white/10 flex flex-col overflow-y-auto shrink-0 max-lg:w-[320px] max-md:fixed max-md:top-0 max-md:right-0 max-md:w-full max-md:h-screen max-md:z-90 animate-slide-right">
+      {(openList || openNote) && (
+        <>
+        <div className="hidden max-md:block fixed inset-0 bg-black/40 z-80 animate-fade-in" onClick={() => { setOpenCardId(null); setOpenCardType(null) }} />
+        <div ref={detailRef} className="w-[380px] bg-card/80 backdrop-blur-sm border-l border-white/10 flex flex-col overflow-y-auto shrink-0 max-lg:w-[320px] max-md:fixed max-md:top-0 max-md:right-0 max-md:w-full max-md:h-screen max-md:z-90 animate-slide-right">
           <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-secondary/50">
             <div className="flex items-center gap-2">
-              {openTask && <span className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-violet-500/15 text-violet-400">Tache</span>}
+              {openList && <span className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-violet-500/15 text-violet-400">Liste</span>}
+              {openList && openList.linkedNoteId && notes.find(n => n.id === openList.linkedNoteId) && <span className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded" style={{ background: notes.find(n => n.id === openList.linkedNoteId).color + '15', color: notes.find(n => n.id === openList.linkedNoteId).color }}>Note</span>}
               {openNote && <span className="text-[0.6rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded" style={{ background: openNote.color + '15', color: openNote.color }}>Note</span>}
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Detail</h3>
             </div>
             <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors duration-150" onClick={() => { setOpenCardId(null); setOpenCardType(null) }}><X size={16} /></button>
           </div>
 
-          {openTask && (
-            <div className="p-5 space-y-5 flex-1">
-              <input className="w-full px-0 py-1 bg-transparent border-none border-b-2 border-white/10 text-foreground text-lg font-bold outline-none focus:border-violet-500" value={openTask.text} onChange={e => updateTask(openTask.id, { text: e.target.value })} />
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Colonne</label>
-                <div className="flex gap-1.5 flex-wrap">
-                  {columns.map(c => (
-                    <button key={c.id} className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 rounded-xl text-muted-foreground cursor-pointer text-xs transition-all duration-150", getTaskCol(openTask) === c.id && "font-semibold")}
-                      style={getTaskCol(openTask) === c.id ? { background: c.color + '12', color: c.color, borderColor: c.color + '40' } : {}}
-                      onClick={() => { const isB = !!BUILTIN_STATUS[c.id]; updateTask(openTask.id, isB ? { status: c.id, kanbanCol: undefined } : { kanbanCol: c.id }); if (c.id === 'done') logActivity('task_done', `Tache "${openTask.text}" terminee`) }}>
-                      <span className="w-2 h-2 rounded-full" style={{ background: c.color }} /> {c.label}
-                    </button>
-                  ))}
+          {openList && (() => {
+            const listTodos = allTodos.filter(t => t.listId === openList.id)
+            const doneCount = listTodos.filter(t => t.status === 'done').length
+            const totalCount = listTodos.length
+            const listPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+            const linkedNote = openList.linkedNoteId ? notes.find(n => n.id === openList.linkedNoteId) : null
+            const cardLabels = getCardLabels(openList.id, 'list', linkedNote)
+            return (
+              <div className="p-5 space-y-5 flex-1">
+                {/* Labels */}
+                <div>
+                  <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Étiquettes</label>
+                  <div className="flex gap-1.5 flex-wrap items-center">
+                    {cardLabels.map(lb => (
+                      <button key={lb.id} className="group/lb inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[0.65rem] font-semibold text-white cursor-pointer border-none hover:brightness-90 transition-all" style={{ background: lb.color }} onClick={() => toggleCardLabel(openList.id, 'list', lb.id)}>
+                        {lb.name || ''}
+                        <X size={9} className="opacity-0 group-hover/lb:opacity-100 transition-opacity" />
+                      </button>
+                    ))}
+                    <button className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white/[0.06] border border-dashed border-white/15 rounded-lg text-muted-foreground/50 cursor-pointer text-[0.6rem] hover:bg-accent/30 hover:text-foreground transition-all" onClick={() => setLabelPicker({ cardId: openList.id, cardType: 'list' })}><Plus size={10} /> {cardLabels.length === 0 ? 'Ajouter' : ''}</button>
+                    {boardLabels.length === 0 && <button className="text-[0.55rem] text-muted-foreground/40 bg-transparent border-none cursor-pointer hover:text-foreground transition-colors" onClick={() => { setLabelManager(true); setEditingLabel(null); setNewLabelName(''); setNewLabelColor(LABEL_COLORS[0]) }}>Gérer</button>}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Priorite</label>
-                <div className="flex gap-1.5">{PRIORITIES.map(p => <button key={p.value} className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 rounded-xl text-muted-foreground cursor-pointer text-xs transition-all duration-150 flex-1 justify-center", openTask.priority === p.value && "font-semibold")} style={openTask.priority === p.value ? { background: p.color + '15', color: p.color, borderColor: p.color + '40' } : {}} onClick={() => updateTask(openTask.id, { priority: p.value })}>{p.label}</button>)}</div>
-              </div>
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Liste</label>
-                <select className="w-full px-3 py-2 bg-input border border-white/10 rounded-xl text-foreground text-sm outline-none focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] cursor-pointer" value={openTask.listId} onChange={e => updateTask(openTask.id, { listId: e.target.value })}>{lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
-              </div>
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Tags</label>
-                <div className="flex flex-wrap gap-1.5">{TAG_COLORS.map(t => { const active = (openTask.tags || []).includes(t.name); return <button key={t.name} className={cn("flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border cursor-pointer transition-all duration-150", active ? "border-current" : "border-white/10 text-muted-foreground hover:border-current")} style={active ? { background: t.color + '15', color: t.color, borderColor: t.color + '40' } : { color: t.color }} onClick={() => { const tags = openTask.tags || []; updateTask(openTask.id, { tags: tags.includes(t.name) ? tags.filter(x => x !== t.name) : [...tags, t.name] }) }}><span className="w-2 h-2 rounded-full" style={{ background: t.color }} /> {t.name}</button> })}</div>
-              </div>
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Echeance</label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <input type="date" className="px-3 py-2 bg-input border border-white/10 rounded-xl text-foreground text-sm outline-none focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] [color-scheme:dark] cursor-pointer" value={openTask.dueDate || ''} onChange={e => updateTask(openTask.id, { dueDate: e.target.value || null })} />
-                  {openTask.dueDate && <button className="px-2.5 py-1.5 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-lg text-muted-foreground cursor-pointer text-xs hover:text-foreground" onClick={() => updateTask(openTask.id, { dueDate: null })}>Retirer</button>}
-                  {openTask.dueDate && isOverdue(openTask.dueDate) && openTask.status !== 'done' && <span className="inline-flex items-center gap-1 text-xs text-destructive font-semibold"><AlertCircle size={12} /> En retard</span>}
+                <div className="flex items-center gap-2">
+                  <div className="text-foreground text-lg font-bold flex-1">{openList.name}</div>
+                  <button className="inline-flex items-center gap-1 px-2 py-1 bg-violet-500/10 border border-violet-500/20 rounded-lg text-violet-400 cursor-pointer text-[0.6rem] font-semibold hover:bg-violet-500/20 transition-all" onClick={() => { if (goTo) goTo('todos', { listId: openList.id }); setOpenCardId(null); setOpenCardType(null) }}><ExternalLink size={10} /> Ouvrir la liste</button>
                 </div>
-              </div>
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Notes</label>
-                <textarea className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm leading-relaxed outline-none resize-y font-[inherit] min-h-20 focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] placeholder:text-muted-foreground/40" value={openTask.notes} onChange={e => updateTask(openTask.id, { notes: e.target.value })} placeholder="Ajoutez des notes..." rows={3} />
-              </div>
-              {/* Linked note section */}
-              <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Note liee</label>
-                {(() => {
-                  const ln = openTask.linkedNoteId ? notes.find(n => n.id === openTask.linkedNoteId) : null
-                  if (ln) return (
-                    <div className="bg-card/60 border border-cyan-500/20 rounded-xl p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: ln.color + '20', color: ln.color }}><StickyNote size={12} /></div>
-                        <span className="text-sm font-semibold flex-1 truncate">{ln.title || 'Sans titre'}</span>
-                        <button className="flex items-center gap-1 px-2 py-1 bg-transparent border border-white/10 rounded-lg text-muted-foreground text-[0.65rem] cursor-pointer hover:bg-accent hover:text-foreground transition-colors" onClick={() => unlinkNote(openTask.id)}><Unlink size={10} /> Delier</button>
+                <div>
+                  <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Colonne</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {columns.map(c => (
+                      <button key={c.id} className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 rounded-xl text-muted-foreground cursor-pointer text-xs transition-all duration-150", openList.kanbanStatus === c.id && "font-semibold")}
+                        style={openList.kanbanStatus === c.id ? { background: c.color + '12', color: c.color, borderColor: c.color + '40' } : {}}
+                        onClick={() => updateList(openList.id, { kanbanStatus: c.id })}>
+                        <span className="w-2 h-2 rounded-full" style={{ background: c.color }} /> {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Progression</label>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-sm font-semibold">{doneCount}/{totalCount} tâche{totalCount > 1 ? 's' : ''}</span>
+                    <span className="text-sm font-bold text-primary">{listPct}%</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full progress-gradient rounded-full transition-all duration-500" style={{ width: `${listPct}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Tâches ({totalCount})</label>
+                  <div className="flex flex-col gap-1">
+                    {listTodos.map(t => {
+                      const prio = PRIORITIES.find(p => p.value === t.priority)
+                      return (
+                        <div key={t.id} className="flex items-center gap-2 px-3 py-2 bg-card/60 border border-white/10 rounded-xl">
+                          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio?.color }} />
+                          <span className={cn("text-xs flex-1 truncate", t.status === 'done' && "line-through text-muted-foreground/60")}>{t.text}</span>
+                          {t.status === 'done' && <Check size={12} className="text-success shrink-0" />}
+                        </div>
+                      )
+                    })}
+                    {totalCount === 0 && <span className="text-xs text-muted-foreground/50">Aucune tâche dans cette liste</span>}
+                  </div>
+                </div>
+                {/* Merged note details */}
+                {linkedNote && (
+                  <div className="space-y-4 pt-3 border-t border-white/10">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                        <StickyNote size={11} style={{ color: linkedNote.color }} /> Note liée
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <button className="inline-flex items-center gap-1 px-2 py-1 bg-transparent border border-white/10 rounded-lg cursor-pointer text-[0.6rem] hover:bg-accent transition-all" style={{ color: linkedNote.color }} onClick={() => { if (goTo) goTo('notes', { noteId: linkedNote.id }); setOpenCardId(null); setOpenCardType(null) }}><ExternalLink size={9} /> Ouvrir</button>
+                        <button className="inline-flex items-center gap-1 px-2 py-1 bg-transparent border border-white/10 rounded-lg text-muted-foreground/50 cursor-pointer text-[0.6rem] hover:bg-accent hover:text-foreground transition-all" onClick={() => updateList(openList.id, { linkedNoteId: null })}><Unlink size={9} /> Scinder</button>
                       </div>
-                      <textarea className="w-full px-3 py-2 bg-input border border-white/10 rounded-lg text-foreground text-sm leading-relaxed outline-none resize-y font-[inherit] min-h-24 focus:border-violet-500 placeholder:text-muted-foreground/40" value={ln.content} onChange={e => updateNote(ln.id, { content: e.target.value })} placeholder="Contenu de la note..." rows={4} />
                     </div>
-                  )
-                  return (
-                    <button className="flex items-center gap-2 px-3 py-2.5 w-full bg-white/[0.04] border border-dashed border-white/15 rounded-xl text-muted-foreground/60 cursor-pointer text-xs hover:bg-accent/30 hover:text-foreground hover:border-cyan-500/30 transition-all duration-150" onClick={() => { setLinkPicker(openTask.id); setLinkSearch('') }}>
-                      <Link2 size={13} className="text-cyan-400/60" /> Lier une note existante...
+                    <input className="w-full px-0 py-1 bg-transparent border-none border-b-2 border-white/10 text-foreground text-base font-bold outline-none focus:border-violet-500" value={linkedNote.title || ''} onChange={e => updateNote(linkedNote.id, { title: e.target.value })} placeholder="Titre de la note" />
+                    <div>
+                      <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Couleur</label>
+                      <div className="flex gap-2">{NOTE_COLORS.map(c => <button key={c} className={cn("w-6 h-6 rounded-full border-2 cursor-pointer transition-all duration-150 hover:scale-110", linkedNote.color === c ? "scale-110 shadow-md" : "opacity-60")} style={{ background: linkedNote.color === c ? c : c + '40', borderColor: c }} onClick={() => updateNote(linkedNote.id, { color: c })} />)}</div>
+                    </div>
+                    <div>
+                      <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Contenu</label>
+                      {linkedNote.content && /<[a-z][\s\S]*>/i.test(linkedNote.content) ? (
+                        <div className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm leading-relaxed min-h-32 prose prose-invert prose-sm max-w-none [&_div]:mb-1 [&_br]:block" dangerouslySetInnerHTML={{ __html: linkedNote.content }} />
+                      ) : (
+                        <textarea className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm leading-relaxed outline-none resize-y font-[inherit] min-h-32 focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] placeholder:text-muted-foreground/40" value={linkedNote.content || ''} onChange={e => updateNote(linkedNote.id, { content: e.target.value })} placeholder="Écrivez votre note..." rows={5} />
+                      )}
+                    </div>
+                    <button className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl cursor-pointer text-xs transition-all duration-150", linkedNote.starred ? "text-warning border-warning/30" : "text-muted-foreground hover:text-foreground")} onClick={() => updateNote(linkedNote.id, { starred: !linkedNote.starred })}>
+                      <Star size={12} className={linkedNote.starred ? "fill-warning" : ""} /> {linkedNote.starred ? 'Favori' : 'Ajouter aux favoris'}
                     </button>
-                  )
-                })()}
+                  </div>
+                )}
+                {!linkedNote && (
+                  <button className="flex items-center gap-2 px-3 py-2.5 w-full bg-white/[0.04] border border-dashed border-white/15 rounded-xl text-muted-foreground/60 cursor-pointer text-xs hover:bg-accent/30 hover:text-foreground hover:border-cyan-500/30 transition-all duration-150" onClick={() => { setNoteLinkPicker(openList.id); setNoteLinkSearch('') }}>
+                    <Link2 size={13} className="text-cyan-400/60" /> Lier une note...
+                  </button>
+                )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {openNote && (
             <div className="p-5 space-y-5 flex-1">
-              <input className="w-full px-0 py-1 bg-transparent border-none border-b-2 border-white/10 text-foreground text-lg font-bold outline-none focus:border-violet-500" value={openNote.title || ''} onChange={e => updateNote(openNote.id, { title: e.target.value })} placeholder="Titre" />
+              {/* Labels */}
+              {(() => {
+                const noteLabels = getCardLabels(openNote.id, 'note', null)
+                return (
+                  <div>
+                    <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Étiquettes</label>
+                    <div className="flex gap-1.5 flex-wrap items-center">
+                      {noteLabels.map(lb => (
+                        <button key={lb.id} className="group/lb inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[0.65rem] font-semibold text-white cursor-pointer border-none hover:brightness-90 transition-all" style={{ background: lb.color }} onClick={() => toggleCardLabel(openNote.id, 'note', lb.id)}>
+                          {lb.name || ''}
+                          <X size={9} className="opacity-0 group-hover/lb:opacity-100 transition-opacity" />
+                        </button>
+                      ))}
+                      <button className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white/[0.06] border border-dashed border-white/15 rounded-lg text-muted-foreground/50 cursor-pointer text-[0.6rem] hover:bg-accent/30 hover:text-foreground transition-all" onClick={() => setLabelPicker({ cardId: openNote.id, cardType: 'note' })}><Plus size={10} /> {noteLabels.length === 0 ? 'Ajouter' : ''}</button>
+                      {boardLabels.length === 0 && <button className="text-[0.55rem] text-muted-foreground/40 bg-transparent border-none cursor-pointer hover:text-foreground transition-colors" onClick={() => { setLabelManager(true); setEditingLabel(null); setNewLabelName(''); setNewLabelColor(LABEL_COLORS[0]) }}>Gérer</button>}
+                    </div>
+                  </div>
+                )
+              })()}
+              <div className="flex items-center gap-2">
+                <input className="flex-1 px-0 py-1 bg-transparent border-none border-b-2 border-white/10 text-foreground text-lg font-bold outline-none focus:border-violet-500" value={openNote.title || ''} onChange={e => updateNote(openNote.id, { title: e.target.value })} placeholder="Titre" />
+                <button className="inline-flex items-center gap-1 px-2 py-1 rounded-lg cursor-pointer text-[0.6rem] font-semibold hover:brightness-125 transition-all shrink-0" style={{ background: openNote.color + '15', color: openNote.color, border: `1px solid ${openNote.color}30` }} onClick={() => { if (goTo) goTo('notes', { noteId: openNote.id }); setOpenCardId(null); setOpenCardType(null) }}><ExternalLink size={10} /> Ouvrir la note</button>
+              </div>
               <div>
                 <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Colonne</label>
                 <div className="flex gap-1.5 flex-wrap">{columns.map(c => <button key={c.id} className={cn("flex items-center gap-1.5 px-3 py-2 bg-white/[0.06] border border-white/10 rounded-xl text-muted-foreground cursor-pointer text-xs transition-all duration-150", openNote.kanbanStatus === c.id && "font-semibold")} style={openNote.kanbanStatus === c.id ? { background: c.color + '15', color: c.color, borderColor: c.color + '40' } : {}} onClick={() => updateNote(openNote.id, { kanbanStatus: c.id })}><span className="w-2 h-2 rounded-full" style={{ background: c.color }} /> {c.label}</button>)}</div>
@@ -1630,27 +1664,42 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
               </div>
               <div>
                 <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Contenu</label>
-                <textarea className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm leading-relaxed outline-none resize-y font-[inherit] min-h-40 focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] placeholder:text-muted-foreground/40" value={openNote.content} onChange={e => updateNote(openNote.id, { content: e.target.value })} placeholder="Ecrivez votre note..." rows={8} />
+                {openNote.content && /<[a-z][\s\S]*>/i.test(openNote.content) ? (
+                  <div className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm leading-relaxed min-h-40 prose prose-invert prose-sm max-w-none [&_div]:mb-1 [&_br]:block" dangerouslySetInnerHTML={{ __html: openNote.content }} />
+                ) : (
+                  <textarea className="w-full px-3 py-2.5 bg-input border border-white/10 rounded-xl text-foreground text-sm leading-relaxed outline-none resize-y font-[inherit] min-h-40 focus:border-violet-500 focus:shadow-[0_0_20px_rgba(139,92,246,0.15)] placeholder:text-muted-foreground/40" value={openNote.content || ''} onChange={e => updateNote(openNote.id, { content: e.target.value })} placeholder="Ecrivez votre note..." rows={8} />
+                )}
               </div>
-              {/* Linked tasks section */}
+              {/* Linked lists section */}
               <div>
-                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Tâches liées</label>
+                <label className="block text-[0.7rem] font-semibold text-muted-foreground uppercase tracking-widest mb-2.5">Listes liées</label>
                 {(() => {
-                  const noteTasks = allTodos.filter(t => t.linkedNoteId === openNote.id)
+                  const noteLists = lists.filter(l => l.linkedNoteId === openNote.id)
                   return (
                     <div className="flex flex-col gap-1.5">
-                      {noteTasks.map(t => {
-                        const prio = PRIORITIES.find(p => p.value === t.priority)
+                      {noteLists.map(l => {
+                        const listTodos = allTodos.filter(t => t.listId === l.id)
+                        const doneCount = listTodos.filter(t => t.status === 'done').length
+                        const totalCount = listTodos.length
+                        const listPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
                         return (
-                          <div key={t.id} className="flex items-center gap-2 px-3 py-2 bg-card/60 border border-cyan-500/20 rounded-xl group/lt">
-                            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: prio?.color }} />
-                            <span className={cn("text-xs flex-1 truncate", t.status === 'done' && "line-through text-muted-foreground/60")}>{t.text}</span>
-                            <button className="flex items-center gap-1 px-1.5 py-0.5 bg-transparent border-none text-muted-foreground/40 cursor-pointer text-[0.6rem] rounded hover:bg-accent hover:text-foreground opacity-0 group-hover/lt:opacity-100 transition-all" onClick={() => updateTask(t.id, { linkedNoteId: null })}><Unlink size={9} /></button>
+                          <div key={l.id} className="px-3 py-2.5 bg-card/60 border border-cyan-500/20 rounded-xl group/lt">
+                            <div className="flex items-center gap-2">
+                              <FolderOpen size={12} className="text-primary/60 shrink-0" />
+                              <span className="text-xs font-semibold flex-1 truncate">{l.name}</span>
+                              <span className="text-[0.6rem] text-muted-foreground">{doneCount}/{totalCount}</span>
+                              <button className="flex items-center gap-1 px-1.5 py-0.5 bg-transparent border-none text-muted-foreground/40 cursor-pointer text-[0.6rem] rounded hover:bg-accent hover:text-foreground opacity-0 group-hover/lt:opacity-100 transition-all" onClick={() => updateList(l.id, { linkedNoteId: null })}><Unlink size={9} /></button>
+                            </div>
+                            {totalCount > 0 && (
+                              <div className="mt-2 w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-success/70 rounded-full transition-all" style={{ width: `${listPct}%` }} />
+                              </div>
+                            )}
                           </div>
                         )
                       })}
-                      <button className="flex items-center gap-2 px-3 py-2.5 w-full bg-white/[0.04] border border-dashed border-white/15 rounded-xl text-muted-foreground/60 cursor-pointer text-xs hover:bg-accent/30 hover:text-foreground hover:border-cyan-500/30 transition-all duration-150" onClick={() => { setTaskLinkPicker(openNote.id); setTaskLinkSearch('') }}>
-                        <Link2 size={13} className="text-cyan-400/60" /> Lier une tâche existante...
+                      <button className="flex items-center gap-2 px-3 py-2.5 w-full bg-white/[0.04] border border-dashed border-white/15 rounded-xl text-muted-foreground/60 cursor-pointer text-xs hover:bg-accent/30 hover:text-foreground hover:border-cyan-500/30 transition-all duration-150" onClick={() => { setListLinkPicker(openNote.id); setListLinkSearch('') }}>
+                        <Link2 size={13} className="text-cyan-400/60" /> Lier une liste existante...
                       </button>
                     </div>
                   )
@@ -1663,114 +1712,250 @@ function KanbanBoard({ lists, allTodos, setAllTodos, notes, setNotes,
           )}
 
           <div className="px-5 py-3 mt-auto border-t border-white/10 bg-secondary/30 flex items-center justify-between">
-            <span className="text-[0.7rem] text-muted-foreground">{openTask && `Creee le ${new Date(openTask.createdAt).toLocaleDateString('fr-FR')}`}{openNote && `Modifiee ${new Date(openNote.updatedAt).toLocaleDateString('fr-FR')}`}</span>
+            <span className="text-[0.7rem] text-muted-foreground">{openList && `Creee le ${new Date(openList.createdAt).toLocaleDateString('fr-FR')}`}{openNote && `Modifiee ${new Date(openNote.updatedAt).toLocaleDateString('fr-FR')}`}</span>
             <button className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-transparent border border-destructive/30 rounded-lg text-destructive/80 cursor-pointer text-xs transition-all duration-150 hover:bg-destructive hover:text-white hover:border-destructive"
-              onClick={() => { if (openTask) deleteTask(openTask.id); if (openNote) deleteNote(openNote.id); setOpenCardId(null); setOpenCardType(null) }}><Trash2 size={12} /> Supprimer definitivement</button>
+              onClick={() => {
+                if (openList) removeListFromKanban(openList.id)
+                if (openNote) deleteNote(openNote.id)
+                setOpenCardId(null); setOpenCardType(null)
+              }}>{openList ? <><X size={12} /> Retirer du kanban</> : <><Trash2 size={12} /> Supprimer definitivement</>}</button>
+          </div>
+        </div>
+        </>
+      )}
+
+      {/* Link note picker modal — disabled in list-based kanban */}
+
+      {/* Note link picker (pick a note for a list) */}
+      {noteLinkPicker && (() => {
+        const list = lists.find(l => l.id === noteLinkPicker)
+        if (!list) return null
+        const nq = noteLinkSearch.toLowerCase()
+        const availableNotes = notes.filter(n => {
+          if (lists.some(l => l.linkedNoteId === n.id)) return false // already linked
+          if (nq && !(n.title || '').toLowerCase().includes(nq) && !(n.content || '').toLowerCase().includes(nq)) return false
+          return true
+        })
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setNoteLinkPicker(null)}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div className="relative w-full max-w-[480px] max-h-[70vh] bg-card/80 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-scale-in mx-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10 shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-400"><StickyNote size={18} /></div>
+                <div className="flex-1">
+                  <h2 className="text-base font-bold">Lier une note</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">à "{list.name}"</p>
+                </div>
+                <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => setNoteLinkPicker(null)}><X size={16} /></button>
+              </div>
+              <div className="px-6 py-3 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2 px-3 py-2 bg-input border border-white/10 rounded-xl text-muted-foreground focus-within:border-violet-500/50 transition-colors">
+                  <Search size={13} />
+                  <input type="text" value={noteLinkSearch} onChange={e => setNoteLinkSearch(e.target.value)} placeholder="Rechercher une note..." autoFocus className="bg-transparent border-none text-foreground text-sm outline-none flex-1" />
+                  {noteLinkSearch && <button className="flex bg-transparent border-none text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setNoteLinkSearch('')}><X size={12} /></button>}
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                <div className="flex flex-col gap-1.5">
+                  {availableNotes.map(n => (
+                    <button key={n.id} className="flex items-center gap-3 w-full px-4 py-3 bg-secondary/40 border border-white/10 rounded-xl cursor-pointer text-left transition-all duration-150 hover:bg-secondary/70 hover:border-violet-500/30"
+                      onClick={() => { updateList(list.id, { linkedNoteId: n.id }); setNoteLinkPicker(null); setNoteLinkSearch(''); logActivity('list_link', `Liste "${list.name}" liée à la note "${n.title || 'Sans titre'}"`) }}>
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ background: n.color + '20', color: n.color }}><StickyNote size={12} /></div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold block truncate">{n.title || 'Sans titre'}</span>
+                        {n.content && <span className="text-[0.65rem] text-muted-foreground block truncate mt-0.5">{n.content.slice(0, 60)}</span>}
+                      </div>
+                    </button>
+                  ))}
+                  {availableNotes.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-14 text-muted-foreground/40">
+                      <StickyNote size={32} className="mb-3 opacity-40" />
+                      <span className="text-sm">{notes.length === 0 ? 'Aucune note créée' : noteLinkSearch ? 'Aucune note correspondante' : 'Toutes les notes sont déjà liées'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-end px-6 py-3 border-t border-white/10 shrink-0 bg-secondary/30 rounded-b-2xl">
+                <button className="px-4 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium" onClick={() => setNoteLinkPicker(null)}>Annuler</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Link list picker modal (for notes) */}
+      {listLinkPicker && (() => {
+        const note = notes.find(n => n.id === listLinkPicker)
+        if (!note) return null
+        const lq = listLinkSearch.toLowerCase()
+        const availableLists = lists.filter(l => {
+          if (l.linkedNoteId) return false
+          if (lq && !l.name.toLowerCase().includes(lq)) return false
+          return true
+        })
+        const hiddenListCount = lists.filter(l => l.linkedNoteId).length
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setListLinkPicker(null)}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div className="relative w-full max-w-[480px] max-h-[70vh] bg-card/80 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-scale-in mx-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10 shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-400"><Link2 size={18} /></div>
+                <div className="flex-1">
+                  <h2 className="text-base font-bold">Lier une liste</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">à "{note.title || 'Sans titre'}"</p>
+                </div>
+                <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => setListLinkPicker(null)}><X size={16} /></button>
+              </div>
+              <div className="px-6 py-3 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2 px-3 py-2 bg-input border border-white/10 rounded-xl text-muted-foreground focus-within:border-violet-500/50 transition-colors">
+                  <Search size={13} />
+                  <input type="text" value={listLinkSearch} onChange={e => setListLinkSearch(e.target.value)} placeholder="Rechercher une liste..." autoFocus className="bg-transparent border-none text-foreground text-sm outline-none flex-1" />
+                  {listLinkSearch && <button className="flex bg-transparent border-none text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setListLinkSearch('')}><X size={12} /></button>}
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                <div className="flex flex-col gap-1.5">
+                  {availableLists.map(l => {
+                    const listTodos = allTodos.filter(t => t.listId === l.id)
+                    const doneCount = listTodos.filter(t => t.status === 'done').length
+                    return (
+                      <button key={l.id} className="flex items-center gap-3 w-full px-4 py-3 bg-secondary/40 border border-white/10 rounded-xl cursor-pointer text-left transition-all duration-150 hover:bg-secondary/70 hover:border-violet-500/30"
+                        onClick={() => { updateList(l.id, { linkedNoteId: listLinkPicker }); setListLinkPicker(null); setListLinkSearch(''); logActivity('list_link', `Liste "${l.name}" liée à la note "${note.title || 'Sans titre'}"`) }}>
+                        <FolderOpen size={15} className="text-primary/60 shrink-0" />
+                        <span className="text-sm font-semibold flex-1">{l.name}</span>
+                        <span className="text-[0.65rem] text-muted-foreground bg-muted px-2.5 py-0.5 rounded-lg font-semibold">{doneCount}/{listTodos.length} tâche{listTodos.length > 1 ? 's' : ''}</span>
+                      </button>
+                    )
+                  })}
+                  {availableLists.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-14 text-muted-foreground/40">
+                      <FolderOpen size={32} className="mb-3 opacity-40" />
+                      <span className="text-sm">{lists.length === 0 ? 'Aucune liste créée' : listLinkSearch ? 'Aucune liste correspondante' : 'Toutes les listes sont déjà liées'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-6 py-3 border-t border-white/10 shrink-0 bg-secondary/30 rounded-b-2xl">
+                {hiddenListCount > 0 && <span className="text-[0.65rem] text-muted-foreground/50">{hiddenListCount} liste{hiddenListCount > 1 ? 's' : ''} masquée{hiddenListCount > 1 ? 's' : ''} (déjà liée{hiddenListCount > 1 ? 's' : ''})</span>}
+                {hiddenListCount === 0 && <span />}
+                <button className="px-4 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium" onClick={() => setListLinkPicker(null)}>Annuler</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Label manager modal */}
+      {labelManager && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => { setLabelManager(false); setEditingLabel(null) }}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative w-full max-w-[420px] max-h-[70vh] bg-card/80 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-scale-in mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center text-violet-400"><Tag size={18} /></div>
+              <div className="flex-1">
+                <h2 className="text-base font-bold">Étiquettes du tableau</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">{boardLabels.length} étiquette{boardLabels.length > 1 ? 's' : ''}</p>
+              </div>
+              <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => { setLabelManager(false); setEditingLabel(null) }}><X size={16} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 min-h-0">
+              <div className="flex flex-col gap-2">
+                {boardLabels.map(lb => (
+                  <div key={lb.id} className="flex items-center gap-2 group/lbl">
+                    {editingLabel?.id === lb.id ? (
+                      <div className="flex-1 flex flex-col gap-2 p-3 bg-secondary/40 border border-white/10 rounded-xl">
+                        <input className="w-full px-2.5 py-1.5 bg-input border border-white/10 rounded-lg text-foreground text-sm outline-none focus:border-violet-500" value={editingLabel.name} onChange={e => setEditingLabel({ ...editingLabel, name: e.target.value })} placeholder="Nom de l'étiquette" autoFocus />
+                        <div className="flex gap-1.5 flex-wrap">
+                          {LABEL_COLORS.map(c => (
+                            <button key={c} className={cn("w-6 h-6 rounded-full border-2 cursor-pointer transition-all duration-150 hover:scale-110", editingLabel.color === c ? "scale-110 shadow-sm" : "opacity-50")} style={{ background: editingLabel.color === c ? c : c + '30', borderColor: c }} onClick={() => setEditingLabel({ ...editingLabel, color: c })} />
+                          ))}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <button className="px-3 py-1.5 bg-transparent border border-destructive/30 rounded-lg text-destructive text-xs cursor-pointer hover:bg-destructive hover:text-white transition-all" onClick={() => { deleteBoardLabel(lb.id); setEditingLabel(null) }}>Supprimer</button>
+                          <button className="px-3 py-1.5 bg-white/[0.06] border border-white/10 rounded-lg text-muted-foreground text-xs cursor-pointer hover:text-foreground" onClick={() => setEditingLabel(null)}>Annuler</button>
+                          <button className="px-3 py-1.5 bg-violet-500/20 border border-violet-500/30 rounded-lg text-violet-400 text-xs font-semibold cursor-pointer hover:bg-violet-500/30 transition-all" onClick={() => { updateBoardLabel(lb.id, { name: editingLabel.name, color: editingLabel.color }); setEditingLabel(null) }}>Enregistrer</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="flex-1 h-9 rounded-lg flex items-center px-3 text-sm font-semibold text-white cursor-pointer hover:opacity-80 transition-opacity" style={{ background: lb.color }} onClick={() => setEditingLabel({ ...lb })}>{lb.name || 'Sans nom'}</span>
+                        <button className="w-8 h-8 flex items-center justify-center bg-transparent border-none text-muted-foreground/40 cursor-pointer rounded-lg hover:bg-accent hover:text-foreground opacity-0 group-hover/lbl:opacity-100 transition-all" onClick={() => setEditingLabel({ ...lb })}><Edit3 size={13} /></button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* Add new label */}
+              <div className="mt-4 p-3 bg-secondary/30 border border-white/10 rounded-xl">
+                <div className="text-[0.65rem] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Nouvelle étiquette</div>
+                <input className="w-full px-2.5 py-1.5 bg-input border border-white/10 rounded-lg text-foreground text-sm outline-none focus:border-violet-500 mb-2" value={newLabelName} onChange={e => setNewLabelName(e.target.value)} placeholder="Nom..." onKeyDown={e => { if (e.key === 'Enter' && newLabelName.trim()) { addBoardLabel(newLabelName.trim(), newLabelColor); setNewLabelName('') } }} />
+                <div className="flex gap-1.5 flex-wrap mb-3">
+                  {LABEL_COLORS.map(c => (
+                    <button key={c} className={cn("w-6 h-6 rounded-full border-2 cursor-pointer transition-all duration-150 hover:scale-110", newLabelColor === c ? "scale-110 shadow-sm" : "opacity-50")} style={{ background: newLabelColor === c ? c : c + '30', borderColor: c }} onClick={() => setNewLabelColor(c)} />
+                  ))}
+                </div>
+                <button className="px-4 py-2 bg-violet-500/20 border border-violet-500/30 rounded-xl text-violet-400 text-xs font-semibold cursor-pointer hover:bg-violet-500/30 transition-all w-full" disabled={!newLabelName.trim()} onClick={() => { if (newLabelName.trim()) { addBoardLabel(newLabelName.trim(), newLabelColor); setNewLabelName('') } }}>
+                  <Plus size={12} className="inline mr-1" /> Créer l'étiquette
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-end px-6 py-3 border-t border-white/10 shrink-0 bg-secondary/30 rounded-b-2xl">
+              <button className="px-4 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium" onClick={() => { setLabelManager(false); setEditingLabel(null) }}>Fermer</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Link note picker modal */}
-      {linkPicker && (() => {
-        const task = allTodos.find(t => t.id === linkPicker)
-        if (!task) return null
-        const lq = linkSearch.toLowerCase()
-        const hiddenCount = notes.filter(n => linkedNoteIds.has(n.id)).length
-        const availableNotes = notes.filter(n => {
-          if (linkedNoteIds.has(n.id)) return false
-          if (lq && !(n.title || '').toLowerCase().includes(lq) && !(n.content || '').toLowerCase().includes(lq)) return false
-          return true
-        })
-        return (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setLinkPicker(null)}>
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            <div className="relative w-full max-w-[480px] max-h-[70vh] bg-card/80 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-scale-in mx-4" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10 shrink-0">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-400"><Link2 size={18} /></div>
-                <div className="flex-1">
-                  <h2 className="text-base font-bold">Lier une note</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">a "{task.text}"</p>
+      {/* Label picker modal (assign labels to a card) */}
+      {labelPicker && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setLabelPicker(null)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative w-full max-w-[360px] bg-card/80 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-scale-in mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-5 py-3.5 border-b border-white/10 shrink-0">
+              <Tag size={15} className="text-violet-400" />
+              <h2 className="text-sm font-bold flex-1">Étiquettes</h2>
+              <button className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => setLabelPicker(null)}><X size={14} /></button>
+            </div>
+            <div className="p-4 flex flex-col gap-1.5 max-h-[50vh] overflow-y-auto">
+              {boardLabels.map(lb => {
+                const currentLabels = labelPicker.cardType === 'list'
+                  ? (lists.find(l => l.id === labelPicker.cardId)?.kanbanLabels || [])
+                  : (notes.find(n => n.id === labelPicker.cardId)?.kanbanLabels || [])
+                const isActive = currentLabels.includes(lb.id)
+                return (
+                  <div key={lb.id} className="flex items-center gap-2">
+                    <button className={cn("flex items-center gap-2.5 flex-1 px-3 py-2.5 border rounded-xl cursor-pointer text-left transition-all duration-150", isActive ? "border-white/20 bg-white/[0.08]" : "border-transparent bg-transparent hover:bg-white/[0.04]")}
+                      onClick={() => toggleCardLabel(labelPicker.cardId, labelPicker.cardType, lb.id)}>
+                      <span className="h-6 flex-1 rounded-md flex items-center px-2 text-[0.65rem] font-semibold text-white" style={{ background: lb.color }}>{lb.name || ''}</span>
+                      {isActive && <Check size={14} className="text-primary shrink-0" />}
+                    </button>
+                    <button className="w-8 h-8 flex items-center justify-center bg-transparent border-none text-muted-foreground/30 cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-all" onClick={() => { setLabelPicker(null); setLabelManager(true); setEditingLabel({ ...lb }) }}><Edit3 size={12} /></button>
+                  </div>
+                )
+              })}
+              {/* Création rapide inline */}
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <div className="text-[0.6rem] font-semibold text-muted-foreground/50 uppercase tracking-wider mb-2">Créer une étiquette</div>
+                <div className="flex gap-1.5 flex-wrap mb-2">
+                  {LABEL_COLORS.map(c => (
+                    <button key={c} className={cn("w-6 h-6 rounded-full border-2 cursor-pointer transition-all duration-150 hover:scale-110", newLabelColor === c ? "scale-110 shadow-sm" : "opacity-40")} style={{ background: newLabelColor === c ? c : c + '30', borderColor: c }} onClick={() => setNewLabelColor(c)} />
+                  ))}
                 </div>
-                <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => setLinkPicker(null)}><X size={16} /></button>
-              </div>
-              <div className="px-6 py-3 border-b border-white/10 shrink-0">
-                <div className="flex items-center gap-2 px-3 py-2 bg-input border border-white/10 rounded-xl text-muted-foreground focus-within:border-violet-500/50 transition-colors">
-                  <Search size={13} />
-                  <input type="text" value={linkSearch} onChange={e => setLinkSearch(e.target.value)} placeholder="Rechercher une note..." autoFocus className="bg-transparent border-none text-foreground text-sm outline-none flex-1" />
-                  {linkSearch && <button className="flex bg-transparent border-none text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setLinkSearch('')}><X size={12} /></button>}
+                <div className="flex gap-1.5">
+                  <input className="flex-1 px-2.5 py-1.5 bg-input border border-white/10 rounded-lg text-foreground text-xs outline-none focus:border-violet-500" value={newLabelName} onChange={e => setNewLabelName(e.target.value)} placeholder="Nom de l'étiquette..." onKeyDown={e => { if (e.key === 'Enter' && newLabelName.trim()) { const id = addBoardLabel(newLabelName.trim(), newLabelColor); setNewLabelName(''); if (id) toggleCardLabel(labelPicker.cardId, labelPicker.cardType, id) } }} />
+                  <button className="px-3 py-1.5 bg-violet-500/20 border border-violet-500/30 rounded-lg text-violet-400 text-xs font-semibold cursor-pointer hover:bg-violet-500/30 transition-all disabled:opacity-30" disabled={!newLabelName.trim()} onClick={() => { if (newLabelName.trim()) { const id = addBoardLabel(newLabelName.trim(), newLabelColor); setNewLabelName(''); if (id) toggleCardLabel(labelPicker.cardId, labelPicker.cardType, id) } }}>
+                    <Plus size={12} className="inline" />
+                  </button>
                 </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 min-h-0">
-                <div className="flex flex-col gap-1.5">
-                  {availableNotes.map(n => <NoteMiniCard key={n.id} n={n} onClick={() => linkNote(linkPicker, n.id)} />)}
-                  {availableNotes.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-14 text-muted-foreground/40">
-                      <StickyNote size={32} className="mb-3 opacity-40" />
-                      <span className="text-sm">{notes.length === 0 ? 'Aucune note creee' : linkSearch ? 'Aucune note correspondante' : 'Toutes les notes sont deja liees'}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-6 py-3 border-t border-white/10 shrink-0 bg-secondary/30 rounded-b-2xl">
-                {hiddenCount > 0 && <span className="text-[0.65rem] text-muted-foreground/50">{hiddenCount} note{hiddenCount > 1 ? 's' : ''} masquée{hiddenCount > 1 ? 's' : ''} (déjà liée{hiddenCount > 1 ? 's' : ''})</span>}
-                {hiddenCount === 0 && <span />}
-                <button className="px-4 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium" onClick={() => setLinkPicker(null)}>Annuler</button>
               </div>
             </div>
-          </div>
-        )
-      })()}
-
-      {/* Link task picker modal (for notes) */}
-      {taskLinkPicker && (() => {
-        const note = notes.find(n => n.id === taskLinkPicker)
-        if (!note) return null
-        const tq = taskLinkSearch.toLowerCase()
-        const availableTasks = allTodos.filter(t => {
-          if (t.linkedNoteId) return false
-          if (tq && !t.text.toLowerCase().includes(tq)) return false
-          return true
-        })
-        const hiddenTaskCount = allTodos.filter(t => t.linkedNoteId).length
-        return (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={() => setTaskLinkPicker(null)}>
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-            <div className="relative w-full max-w-[480px] max-h-[70vh] bg-card/80 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl shadow-black/30 flex flex-col animate-scale-in mx-4" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10 shrink-0">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-400"><Link2 size={18} /></div>
-                <div className="flex-1">
-                  <h2 className="text-base font-bold">Lier une tâche</h2>
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">à "{note.title || 'Sans titre'}"</p>
-                </div>
-                <button className="flex items-center justify-center w-8 h-8 bg-transparent border-none text-muted-foreground cursor-pointer rounded-lg hover:bg-accent hover:text-foreground transition-colors" onClick={() => setTaskLinkPicker(null)}><X size={16} /></button>
-              </div>
-              <div className="px-6 py-3 border-b border-white/10 shrink-0">
-                <div className="flex items-center gap-2 px-3 py-2 bg-input border border-white/10 rounded-xl text-muted-foreground focus-within:border-violet-500/50 transition-colors">
-                  <Search size={13} />
-                  <input type="text" value={taskLinkSearch} onChange={e => setTaskLinkSearch(e.target.value)} placeholder="Rechercher une tâche..." autoFocus className="bg-transparent border-none text-foreground text-sm outline-none flex-1" />
-                  {taskLinkSearch && <button className="flex bg-transparent border-none text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setTaskLinkSearch('')}><X size={12} /></button>}
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 min-h-0">
-                <div className="flex flex-col gap-1.5">
-                  {availableTasks.map(t => <TaskMiniCard key={t.id} t={t} onClick={() => { updateTask(t.id, { linkedNoteId: taskLinkPicker }); setTaskLinkPicker(null); setTaskLinkSearch(''); logActivity('task_link', `Tache "${t.text}" liee a la note "${note.title || 'Sans titre'}"`) }} />)}
-                  {availableTasks.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-14 text-muted-foreground/40">
-                      <CheckSquare size={32} className="mb-3 opacity-40" />
-                      <span className="text-sm">{allTodos.length === 0 ? 'Aucune tâche créée' : taskLinkSearch ? 'Aucune tâche correspondante' : 'Toutes les tâches sont déjà liées'}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-6 py-3 border-t border-white/10 shrink-0 bg-secondary/30 rounded-b-2xl">
-                {hiddenTaskCount > 0 && <span className="text-[0.65rem] text-muted-foreground/50">{hiddenTaskCount} tâche{hiddenTaskCount > 1 ? 's' : ''} masquée{hiddenTaskCount > 1 ? 's' : ''} (déjà liée{hiddenTaskCount > 1 ? 's' : ''})</span>}
-                {hiddenTaskCount === 0 && <span />}
-                <button className="px-4 py-2 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-xl text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium" onClick={() => setTaskLinkPicker(null)}>Annuler</button>
-              </div>
+            <div className="flex items-center justify-between px-5 py-3 border-t border-white/10 shrink-0 bg-secondary/30 rounded-b-2xl">
+              <button className="text-xs text-muted-foreground/60 bg-transparent border-none cursor-pointer hover:text-foreground transition-colors" onClick={() => { setLabelPicker(null); setLabelManager(true); setEditingLabel(null); setNewLabelName(''); setNewLabelColor(LABEL_COLORS[0]) }}>Gérer les étiquettes</button>
+              <button className="px-3 py-1.5 bg-white/[0.06] border border-white/10 hover:bg-white/[0.12] rounded-lg text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors font-medium" onClick={() => setLabelPicker(null)}>Fermer</button>
             </div>
           </div>
-        )
-      })()}
+        </div>
+      )}
     </div>
   )
 }

@@ -4,7 +4,7 @@ import {
   List, Clock, FileText, AlertCircle, Star, StarOff,
   LayoutList, Columns3, Link2, ChevronRight, MoreHorizontal, ArrowRight, ArrowLeft,
   Sparkles, Eye, EyeOff, Paperclip, File, Image, Upload, Folder, FolderPlus, Copy, Move,
-  Download, Share2
+  Download, Share2, Type
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useProject } from '../contexts/ProjectContext'
@@ -32,12 +32,14 @@ const TAG_COLORS = [
   { name: 'Sante', color: '#2dd4bf' },
 ]
 
+const LIST_COLORS = ['#8b5cf6', '#f87171', '#4ade80', '#facc15', '#60a5fa', '#c084fc', '#fb923c', '#2dd4bf']
+
 function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
   dbAddList, dbUpdateList, dbDeleteList, dbAddTodo, dbUpdateTodo, dbDeleteTodo,
   dbAddSubtask, dbUpdateSubtask, dbDeleteSubtask,
   attachments = [], uploadAttachment, deleteAttachment, getAttachmentUrl, totalStorageUsed = 0,
   createShareLink, logActivity,
-  todoFolders = [], setTodoFolders, dbAddFolder, dbDeleteFolder,
+  todoFolders = [], setTodoFolders, dbAddFolder, dbDeleteFolder, dbUpdateFolder,
   urlListId, urlTaskId, onNavigate, showUpgradeModal }) {
   const { myRole } = useProject()
   const { limits, isFree } = useSubscription()
@@ -73,6 +75,10 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
   const [inlineEditText, setInlineEditText] = useState('')
   const [customTagInput, setCustomTagInput] = useState('')
   const [showCustomTagInput, setShowCustomTagInput] = useState(false)
+  const [cardMenu, setCardMenu] = useState(null) // list id when 3-dot menu open
+  const [folderMenu, setFolderMenu] = useState(null) // folder id when 3-dot menu open
+  const [editingFolderId, setEditingFolderId] = useState(null)
+  const [editFolderName, setEditFolderName] = useState('')
   // Kanban enhanced state
   const [kanbanDropTarget, setKanbanDropTarget] = useState(null) // { status, index }
   const [kanbanAddingIn, setKanbanAddingIn] = useState(null) // column status
@@ -218,6 +224,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
   const addList = async () => { if (!canEdit || !newListName.trim()) return; const name = newListName.trim(); setNewListName(''); setShowNewList(false); const data = await dbAddList(name, currentFolderId || null); if (data) { setActiveListId(data.id); openList(data.id); logActivity('list_created', `Liste "${name}" creee`) } }
   const deleteList = async (id) => { if (!canEdit || lists.length <= 1) return; const name = lists.find(l => l.id === id)?.name; if (activeListId === id) setActiveListId(lists.find(l => l.id !== id)?.id); await dbDeleteList(id); logActivity('list_deleted', `Liste "${name}" supprimee`); if (showToast) showToast(`Liste "${name}" supprimee`, 'success') }
   const renameList = async (id) => { if (!canEdit || !editListName.trim()) { setEditingListId(null); return }; await dbUpdateList(id, { name: editListName.trim() }); setEditingListId(null) }
+  const renameTodoFolder = (id) => { if (!canEdit) return; if (editFolderName.trim() && dbUpdateFolder) dbUpdateFolder(id, { name: editFolderName.trim() }); setEditingFolderId(null) }
   const addTodo = async () => { if (!canEdit || !input.trim()) return; const text = input.trim(); setInput(''); await dbAddTodo({ listId: activeListId, text, status: 'todo', priority: 'medium', dueDate: null, notes: '', tags: [], starred: false }); logActivity('task_created', `Tache "${text}" creee`) }
   const updateTask = (id, updates) => { if (!canEdit) return; setAllTodos(allTodos.map(t => t.id === id ? { ...t, ...updates } : t)); dbUpdateTodo(id, updates) }
   const deleteTask = (id) => { if (!canEdit) return; const task = allTodos.find(t => t.id === id); setAllTodos(allTodos.filter(t => t.id !== id)); if (openTaskId === id) { setOpenTaskId(null); setMobileDetailOpen(false) }; dbDeleteTodo(id); logActivity('task_deleted', `Tache "${task?.text}" supprimee`); if (showToast && task) showToast(`Tache "${task.text}" supprimee`, 'success') }
@@ -931,11 +938,30 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                       {selected && <Check size={12} className="text-white" />}
                     </div>
                   )}
-                  <span className="text-sm font-semibold text-center">{f.name}</span>
+                  {editingFolderId === f.id ? (
+                    <input className="w-full text-center px-2 py-1 bg-input border border-amber-500 rounded-lg text-foreground text-sm outline-none" value={editFolderName} onChange={e => setEditFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') renameTodoFolder(f.id); if (e.key === 'Escape') setEditingFolderId(null) }} onBlur={() => renameTodoFolder(f.id)} onClick={e => e.stopPropagation()} autoFocus />
+                  ) : (
+                    <span className="text-sm font-semibold text-center">{f.name}</span>
+                  )}
                   <span className="text-xs text-muted-foreground">{count} liste{count !== 1 ? 's' : ''}</span>
                   {browserDragOverFolder === f.id && <span className="text-[0.6rem] text-warning font-semibold">Déposer ici</span>}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
-                    <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-destructive hover:bg-destructive/10 transition-colors duration-150" onClick={e => { e.stopPropagation(); deleteTodoFolder(f.id) }}><Trash2 size={13} /></button>
+                    <div className="relative">
+                      <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-foreground hover:bg-white/[0.08] transition-colors duration-150" onClick={e => { e.stopPropagation(); setFolderMenu(folderMenu === f.id ? null : f.id) }}><MoreHorizontal size={15} /></button>
+                      {folderMenu === f.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setFolderMenu(null) }} />
+                          <div className="absolute right-0 top-full mt-1 w-40 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                            <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-muted-foreground cursor-pointer hover:bg-white/[0.06] hover:text-foreground transition-colors text-left" onClick={e => { e.stopPropagation(); setEditingFolderId(f.id); setEditFolderName(f.name); setFolderMenu(null) }}>
+                              <Type size={14} /> Renommer
+                            </button>
+                            <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-destructive cursor-pointer hover:bg-destructive/10 transition-colors text-left" onClick={e => { e.stopPropagation(); deleteTodoFolder(f.id); setFolderMenu(null) }}>
+                              <Trash2 size={14} /> Supprimer
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -952,7 +978,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                 <div key={l.id}
                   data-lasso-item
                   ref={el => { browserItemRefsMap.current[`list:${l.id}`] = el }}
-                  className={cn("relative flex flex-col items-center gap-4 p-7 bg-card/80 backdrop-blur-sm border rounded-2xl cursor-pointer card-hover card-gradient-hover group stagger-item transition-all duration-200", browserDragItems?.some(s => s.id === l.id) && "opacity-50 scale-95", selected ? "border-violet-500/60 bg-violet-500/[0.06] ring-1 ring-violet-500/30" : "border-white/10")}
+                  className={cn("relative flex flex-col items-center gap-4 p-7 bg-card/80 backdrop-blur-sm border rounded-2xl cursor-pointer card-hover card-gradient-hover group stagger-item transition-all duration-200 overflow-hidden", browserDragItems?.some(s => s.id === l.id) && "opacity-50 scale-95", selected ? "border-violet-500/60 bg-violet-500/[0.06] ring-1 ring-violet-500/30" : "border-white/10")}
                   style={{ animationDelay: `${(visibleFolders.length + i) * 0.04}s`, boxShadow: browserReorderTarget?.id === l.id ? (browserReorderTarget.side === 'before' ? 'inset 3px 0 0 0 #8b5cf6' : 'inset -3px 0 0 0 #8b5cf6') : undefined }}
                   onClick={(e) => handleBrowserItemClick(e, 'list', l.id, allItems)}
                   onDoubleClick={(e) => handleBrowserItemDblClick(e, 'list', l.id)}
@@ -962,6 +988,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                   onDragOver={e => handleListDragOver(e, l.id)}
                   onDrop={e => handleListDrop(e, l.id)}
                 >
+                  {l.color && <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl" style={{ background: `linear-gradient(90deg, ${l.color}40, ${l.color}15)` }} />}
                   <div className="w-16 h-16 rounded-2xl bg-primary/15 flex items-center justify-center text-primary group-hover:bg-primary/25 transition-colors duration-150 shadow-sm"><FileText size={30} /></div>
                   {(selectedBrowserItems.length > 0) && (
                     <div className={cn("absolute top-3 left-3 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-150", selected ? "bg-violet-500 border-violet-500" : "border-white/20 bg-black/20 opacity-0 group-hover:opacity-100")}>
@@ -971,7 +998,7 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                   {editingListId === l.id ? (
                     <input className="w-full text-center px-2 py-1 bg-input border border-primary rounded-lg text-foreground text-sm outline-none" value={editListName} onChange={e => setEditListName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') renameList(l.id); if (e.key === 'Escape') setEditingListId(null) }} onBlur={() => renameList(l.id)} onClick={e => e.stopPropagation()} autoFocus />
                   ) : (
-                    <span className="text-sm font-semibold text-center" onDoubleClick={e => { e.stopPropagation(); setEditingListId(l.id); setEditListName(l.name) }}>{l.name}</span>
+                    <span className="text-sm font-semibold text-center" style={l.color ? { color: l.color } : undefined}>{l.name}</span>
                   )}
                   <div className="w-full">
                     <div className="flex justify-between text-[0.68rem] text-muted-foreground mb-1.5"><span className="counter-animate">{doneCount}/{count}</span><span className="counter-animate">{pct}%</span></div>
@@ -983,8 +1010,33 @@ function TodoList({ lists, setLists, allTodos, setAllTodos, notes, showToast,
                     </span>
                   ) : null })()}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
-                    <ShareButton itemType="list" itemId={l.id} createShareLink={createShareLink} />
-                    {lists.length > 1 && <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-destructive hover:bg-destructive/10 transition-colors duration-150" onClick={e => { e.stopPropagation(); deleteList(l.id) }}><Trash2 size={13} /></button>}
+                    <div className="relative">
+                      <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-foreground hover:bg-white/[0.08] transition-colors duration-150" onClick={e => { e.stopPropagation(); setCardMenu(cardMenu === l.id ? null : l.id) }}><MoreHorizontal size={15} /></button>
+                      {cardMenu === l.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setCardMenu(null) }} />
+                          <div className="absolute right-0 top-full mt-1 w-44 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                            <div className="px-3 py-2">
+                              <span className="text-[0.65rem] font-semibold text-muted-foreground/60 uppercase tracking-wider">Couleur</span>
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {LIST_COLORS.map(c => (
+                                  <button key={c} className={cn("w-5 h-5 rounded-full border-2 transition-all duration-150 hover:scale-110", l.color === c ? "border-white scale-110" : "border-transparent")} style={{ background: c }} onClick={e => { e.stopPropagation(); if (dbUpdateList) dbUpdateList(l.id, { color: c }); else setLists(prev => prev.map(x => x.id === l.id ? { ...x, color: c } : x)); setCardMenu(null) }} />
+                                ))}
+                                {l.color && (
+                                  <button className="w-5 h-5 rounded-full border-2 border-dashed border-white/20 flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:border-white/40 transition-all duration-150 hover:scale-110" onClick={e => { e.stopPropagation(); if (dbUpdateList) dbUpdateList(l.id, { color: null }); else setLists(prev => prev.map(x => x.id === l.id ? { ...x, color: null } : x)); setCardMenu(null) }} title="Retirer la couleur"><X size={9} /></button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="h-px bg-white/10 my-1" />
+                            <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-muted-foreground cursor-pointer hover:bg-white/[0.06] hover:text-foreground transition-colors text-left" onClick={e => { e.stopPropagation(); setEditingListId(l.id); setEditListName(l.name); setCardMenu(null) }}>
+                              <Type size={14} /> Renommer
+                            </button>
+                            <ShareButton itemType="list" itemId={l.id} createShareLink={createShareLink} className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-muted-foreground cursor-pointer hover:bg-white/[0.06] hover:text-foreground transition-colors text-left" />
+                            {lists.length > 1 && <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-destructive cursor-pointer hover:bg-destructive/10 transition-colors text-left" onClick={e => { e.stopPropagation(); deleteList(l.id); setCardMenu(null) }}><Trash2 size={14} /> Supprimer</button>}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               )

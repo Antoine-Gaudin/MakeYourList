@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useProject } from '../contexts/ProjectContext'
 import { useAuth } from '../contexts/AuthContext'
-import { Users, Eye, Edit3, Crown, Clock, FolderOpen, ArrowRight, StickyNote, FileText, Columns3, Send, Trash2, ChevronDown, Loader2, Search, X, Mail, UserPlus, Check } from 'lucide-react'
+import { Users, Eye, Edit3, Crown, Clock, FolderOpen, ArrowRight, StickyNote, FileText, Columns3, Send, Trash2, ChevronDown, Loader2, Search, X, Mail, UserPlus, Check, Link2, Copy, Ban, Power, Infinity as InfinityIcon, Pencil } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 const roleLabels = { owner: 'Propriétaire', editor: 'Éditeur', viewer: 'Lecteur' }
@@ -11,7 +11,32 @@ const itemTypeLabels = { note: 'Note', list: 'Liste', kanban: 'Kanban' }
 const itemTypeIcons = { note: StickyNote, list: FileText, kanban: Columns3 }
 const itemTypeColors = { note: '#3b82f6', list: '#8b5cf6', kanban: '#f59e0b' }
 
-export default function SharedWithMe({ onOpenProject, onOpenSharedItem }) {
+// Format a timestamp as a relative "expires in" / "expired" string
+const formatExpiry = (ts) => {
+  if (!ts) return { label: 'Illimité', tone: 'neutral' }
+  const diff = ts - Date.now()
+  if (diff <= 0) return { label: 'Expiré', tone: 'expired' }
+  const days = Math.floor(diff / 86400000)
+  const hours = Math.floor((diff % 86400000) / 3600000)
+  const mins = Math.floor((diff % 3600000) / 60000)
+  if (days >= 1) return { label: `Expire dans ${days}j`, tone: days <= 1 ? 'warn' : 'ok' }
+  if (hours >= 1) return { label: `Expire dans ${hours}h`, tone: 'warn' }
+  return { label: `Expire dans ${mins}min`, tone: 'warn' }
+}
+
+const toDatetimeLocal = (ts) => {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export default function SharedWithMe({
+  onOpenProject, onOpenSharedItem,
+  shareLinks = [], notes = [], lists = [], kanbanBoards = [],
+  revokeShareLink, reactivateShareLink, deleteShareLink, updateShareLink,
+  showToast,
+}) {
   const { user } = useAuth()
   const { projects, setActiveProjectId, sharedItems, sentShares, updateShareRole, unshareItem, fetchSentShares, shareItemWithUser } = useProject()
   const [tab, setTab] = useState('received')
@@ -19,6 +44,9 @@ export default function SharedWithMe({ onOpenProject, onOpenSharedItem }) {
   const [openRoleMenu, setOpenRoleMenu] = useState(null)
   const [searchReceived, setSearchReceived] = useState('')
   const [searchSent, setSearchSent] = useState('')
+  const [searchLinks, setSearchLinks] = useState('')
+  const [linkFilter, setLinkFilter] = useState('all') // all | active | expired | revoked
+  const [editingLink, setEditingLink] = useState(null) // { id, label, expiresAt, mode }
   const [addFormOpen, setAddFormOpen] = useState(null)
   const [addEmail, setAddEmail] = useState('')
   const [addRole, setAddRole] = useState('viewer')
@@ -101,6 +129,94 @@ export default function SharedWithMe({ onOpenProject, onOpenSharedItem }) {
   const receivedCount = sharedProjects.length + sharedItems.length
   const sentCount = sentShares.length
 
+  // ======== PUBLIC LINKS ========
+  // Resolve linked item from local state for display
+  const resolveLinkItem = (link) => {
+    if (link.itemType === 'note') {
+      const n = notes.find(x => x.id === link.itemId)
+      return { name: n?.title || 'Note supprimée', exists: !!n, type: 'note' }
+    }
+    if (link.itemType === 'list') {
+      const l = lists.find(x => x.id === link.itemId)
+      return { name: l?.name || 'Liste supprimée', exists: !!l, type: 'list' }
+    }
+    if (link.itemType === 'kanban') {
+      const b = kanbanBoards.find(x => x.id === link.itemId)
+      return { name: b?.name || 'Kanban supprimé', exists: !!b, type: 'kanban' }
+    }
+    return { name: '—', exists: false, type: link.itemType }
+  }
+
+  const linkStatus = (link) => {
+    if (!link.isActive) return 'revoked'
+    if (link.expiresAt && link.expiresAt <= Date.now()) return 'expired'
+    return 'active'
+  }
+
+  const enrichedLinks = shareLinks.map(l => ({ ...l, _item: resolveLinkItem(l), _status: linkStatus(l) }))
+  const qL = searchLinks.toLowerCase().trim()
+  const filteredLinks = enrichedLinks
+    .filter(l => linkFilter === 'all' || l._status === linkFilter)
+    .filter(l => !qL || l._item.name.toLowerCase().includes(qL) || (l.label || '').toLowerCase().includes(qL))
+
+  // Group filtered links by item (itemType + itemId)
+  const groupedLinks = (() => {
+    const map = new Map()
+    filteredLinks.forEach(l => {
+      const key = `${l.itemType}:${l.itemId}`
+      if (!map.has(key)) map.set(key, { itemType: l.itemType, itemId: l.itemId, _item: l._item, links: [] })
+      map.get(key).links.push(l)
+    })
+    return [...map.values()]
+  })()
+
+  const linksCount = shareLinks.length
+  const activeLinksCount = enrichedLinks.filter(l => l._status === 'active').length
+
+  const copyLinkUrl = async (token) => {
+    const url = `${window.location.origin}/share/${token}`
+    try { await navigator.clipboard.writeText(url); showToast?.('Lien copié', 'success') }
+    catch { showToast?.('Copie impossible', 'error') }
+  }
+
+  const handleRevokeLink = async (id) => {
+    if (!revokeShareLink) return
+    await revokeShareLink(id)
+    showToast?.('Accès verrouillé', 'success')
+  }
+  const handleReactivateLink = async (id) => {
+    if (!reactivateShareLink) return
+    await reactivateShareLink(id)
+    showToast?.('Lien réactivé', 'success')
+  }
+  const handleDeleteLink = async (id) => {
+    if (!deleteShareLink) return
+    if (!confirm('Supprimer définitivement ce lien ? Cette action est irréversible.')) return
+    await deleteShareLink(id)
+    showToast?.('Lien supprimé', 'success')
+  }
+  const openEditLink = (link) => {
+    setEditingLink({
+      id: link.id,
+      label: link.label || '',
+      expiresAt: link.expiresAt,
+      mode: link.expiresAt ? 'custom' : 'unlimited',
+    })
+  }
+  const saveEditLink = async () => {
+    if (!editingLink || !updateShareLink) return
+    let expiresAt = null
+    if (editingLink.mode === 'custom') {
+      expiresAt = editingLink.expiresAt ? new Date(editingLink.expiresAt) : null
+    } else if (editingLink.mode === '1d') expiresAt = new Date(Date.now() + 86400000)
+    else if (editingLink.mode === '7d') expiresAt = new Date(Date.now() + 7 * 86400000)
+    else if (editingLink.mode === '30d') expiresAt = new Date(Date.now() + 30 * 86400000)
+    // 'unlimited' keeps expiresAt = null
+    await updateShareLink(editingLink.id, { label: editingLink.label, expiresAt })
+    setEditingLink(null)
+    showToast?.('Lien mis à jour', 'success')
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-y-auto page-transition">
       {/* Header */}
@@ -145,6 +261,21 @@ export default function SharedWithMe({ onOpenProject, onOpenSharedItem }) {
             Partages envoyés
             {sentCount > 0 && (
               <span className={cn("px-2 py-0.5 rounded-full text-[0.6rem] font-bold", tab === 'sent' ? "bg-emerald-500/15 text-emerald-400" : "bg-white/8 text-muted-foreground")}>{sentCount}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab('links')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border-none cursor-pointer transition-all duration-200",
+              tab === 'links'
+                ? "bg-card shadow-md shadow-black/10 text-foreground"
+                : "bg-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Link2 size={14} />
+            Liens publics
+            {linksCount > 0 && (
+              <span className={cn("px-2 py-0.5 rounded-full text-[0.6rem] font-bold", tab === 'links' ? "bg-violet-500/15 text-violet-400" : "bg-white/8 text-muted-foreground")}>{linksCount}</span>
             )}
           </button>
         </div>
@@ -494,6 +625,232 @@ export default function SharedWithMe({ onOpenProject, onOpenSharedItem }) {
               </div>
             )}
           </>
+        )}
+
+        {/* ════════ TAB: Liens publics ════════ */}
+        {tab === 'links' && (
+          <>
+            {/* Search + filters */}
+            {linksCount > 0 && (
+              <div className="flex flex-col sm:flex-row gap-2 mb-5">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+                  <input
+                    type="text"
+                    value={searchLinks}
+                    onChange={e => setSearchLinks(e.target.value)}
+                    placeholder="Rechercher un lien (nom, label)..."
+                    className="w-full bg-muted/30 border border-white/8 rounded-xl py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary/40 focus:bg-muted/50 transition-all"
+                  />
+                  {searchLinks && (
+                    <button onClick={() => setSearchLinks('')} className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 bg-transparent border-none cursor-pointer transition-colors">
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1 p-1 bg-muted/40 border border-white/8 rounded-xl">
+                  {[
+                    { k: 'all', label: 'Tous' },
+                    { k: 'active', label: 'Actifs' },
+                    { k: 'expired', label: 'Expirés' },
+                    { k: 'revoked', label: 'Verrouillés' },
+                  ].map(f => (
+                    <button
+                      key={f.k}
+                      onClick={() => setLinkFilter(f.k)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-[0.7rem] font-semibold border-none cursor-pointer transition-all",
+                        linkFilter === f.k ? "bg-card shadow-sm text-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"
+                      )}
+                    >{f.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {linksCount === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-4 py-24">
+                <div className="w-20 h-20 rounded-2xl bg-violet-500/5 flex items-center justify-center empty-icon">
+                  <Link2 size={40} className="text-violet-400/40" />
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-medium text-muted-foreground mb-1">Aucun lien public</p>
+                  <p className="text-sm text-muted-foreground/60">Utilisez le bouton de partage sur une note, liste ou kanban pour générer un lien.</p>
+                </div>
+              </div>
+            ) : filteredLinks.length === 0 ? (
+              <div className="text-center py-12">
+                <Search size={24} className="text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground/60">Aucun lien ne correspond à ce filtre</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {/* Summary strip */}
+                <div className="flex items-center gap-3 text-[0.7rem] text-muted-foreground mb-1">
+                  <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> {activeLinksCount} actif{activeLinksCount > 1 ? 's' : ''}</span>
+                  <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-white/20" /> {linksCount - activeLinksCount} inactif{linksCount - activeLinksCount > 1 ? 's' : ''}</span>
+                  <span className="text-muted-foreground/50">· portée : projet actif uniquement</span>
+                </div>
+                {groupedLinks.map(group => {
+                  const TypeIcon = itemTypeIcons[group.itemType] || FileText
+                  const typeColor = itemTypeColors[group.itemType] || '#8b5cf6'
+                  const activeCount = group.links.filter(l => l._status === 'active').length
+                  return (
+                    <div key={`${group.itemType}:${group.itemId}`} className="bg-card/60 backdrop-blur-sm border border-white/8 rounded-2xl p-4 sm:p-5">
+                      {/* Item header */}
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: typeColor + '15', color: typeColor }}>
+                          <TypeIcon size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold truncate">{group._item.name}</span>
+                            {!group._item.exists && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.6rem] font-bold bg-destructive/15 text-destructive">Item supprimé</span>
+                            )}
+                          </div>
+                          <div className="text-[0.68rem] text-muted-foreground mt-0.5">
+                            {itemTypeLabels[group.itemType]} · {group.links.length} lien{group.links.length > 1 ? 's' : ''}{activeCount > 0 && <> · <span className="text-emerald-400">{activeCount} actif{activeCount > 1 ? 's' : ''}</span></>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Links list */}
+                      <div className="flex flex-col gap-2">
+                        {group.links.map(link => {
+                          const expiry = formatExpiry(link.expiresAt)
+                          const status = link._status
+                          const statusMeta = status === 'active'
+                            ? { label: 'Actif', color: '#34d399', bg: '#34d39915' }
+                            : status === 'expired'
+                              ? { label: 'Expiré', color: '#f87171', bg: '#f8717115' }
+                              : { label: 'Verrouillé', color: '#9ca3af', bg: '#9ca3af15' }
+                          const url = `${window.location.origin}/share/${link.token}`
+                          return (
+                            <div key={link.id} className="bg-muted/30 border border-white/5 rounded-xl p-3">
+                              {/* Label + status */}
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.6rem] font-bold" style={{ background: statusMeta.bg, color: statusMeta.color }}>
+                                  {statusMeta.label}
+                                </span>
+                                {link.label && <span className="text-[0.7rem] font-medium text-foreground/80 truncate">{link.label}</span>}
+                                <span className="inline-flex items-center gap-1 text-[0.62rem] text-muted-foreground ml-auto">
+                                  {link.expiresAt ? <Clock size={9} /> : <InfinityIcon size={9} />}
+                                  <span className={cn(
+                                    expiry.tone === 'expired' && 'text-destructive',
+                                    expiry.tone === 'warn' && 'text-amber-400',
+                                  )}>{expiry.label}</span>
+                                </span>
+                              </div>
+                              {/* URL */}
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={url}
+                                  onClick={e => e.target.select()}
+                                  className="flex-1 min-w-0 px-2.5 py-1.5 bg-input border border-white/8 rounded-lg text-[0.65rem] font-mono text-muted-foreground outline-none focus:border-primary/40"
+                                />
+                                <button
+                                  onClick={() => copyLinkUrl(link.token)}
+                                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[0.65rem] font-semibold border-none cursor-pointer bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
+                                ><Copy size={10} />Copier</button>
+                              </div>
+                              {/* Actions */}
+                              <div className="flex items-center justify-between gap-2 flex-wrap mt-2 pt-2 border-t border-white/5">
+                                <span className="text-[0.6rem] text-muted-foreground/60">
+                                  {link.createdAt && <>Créé le {new Date(link.createdAt).toLocaleDateString('fr-FR')}</>}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button onClick={() => openEditLink(link)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[0.62rem] font-semibold border-none cursor-pointer bg-transparent text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"><Pencil size={9} />Modifier</button>
+                                  {status === 'active' ? (
+                                    <button onClick={() => handleRevokeLink(link.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[0.62rem] font-semibold border-none cursor-pointer bg-transparent text-amber-400 hover:bg-amber-500/10 transition-colors"><Ban size={9} />Verrouiller</button>
+                                  ) : status === 'revoked' ? (
+                                    <button onClick={() => handleReactivateLink(link.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[0.62rem] font-semibold border-none cursor-pointer bg-transparent text-emerald-400 hover:bg-emerald-500/10 transition-colors"><Power size={9} />Réactiver</button>
+                                  ) : null}
+                                  <button onClick={() => handleDeleteLink(link.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[0.62rem] font-semibold border-none cursor-pointer bg-transparent text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"><Trash2 size={9} />Supprimer</button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Edit link dialog */}
+        {editingLink && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setEditingLink(null)}>
+            <div className="bg-card border border-white/10 rounded-2xl shadow-2xl p-5 w-[min(92vw,420px)]" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-4">
+                <Link2 size={14} className="text-primary" />
+                <span className="text-sm font-semibold">Modifier le lien</span>
+              </div>
+
+              <label className="block text-[0.7rem] text-muted-foreground mb-1">Nom (optionnel)</label>
+              <input
+                type="text"
+                value={editingLink.label}
+                onChange={e => setEditingLink({ ...editingLink, label: e.target.value })}
+                placeholder="Ex : Présentation client"
+                className="w-full px-3 py-2 mb-4 bg-input border border-white/10 rounded-lg text-[0.8rem] text-foreground outline-none focus:border-primary/50"
+              />
+
+              <label className="block text-[0.7rem] text-muted-foreground mb-1.5">Durée de vie</label>
+              <div className="grid grid-cols-2 gap-1.5 mb-3">
+                {[
+                  { k: '1d', label: '24 heures' },
+                  { k: '7d', label: '7 jours' },
+                  { k: '30d', label: '30 jours' },
+                  { k: 'unlimited', label: 'Illimité' },
+                ].map(opt => (
+                  <button
+                    key={opt.k}
+                    onClick={() => setEditingLink({ ...editingLink, mode: opt.k })}
+                    className={cn(
+                      "px-3 py-2 rounded-lg text-[0.72rem] font-semibold border cursor-pointer transition-all",
+                      editingLink.mode === opt.k
+                        ? "bg-primary/15 text-primary border-primary/40"
+                        : "bg-transparent text-muted-foreground border-white/10 hover:text-foreground hover:border-white/20"
+                    )}
+                  >{opt.label}</button>
+                ))}
+                <button
+                  onClick={() => setEditingLink({ ...editingLink, mode: 'custom' })}
+                  className={cn(
+                    "col-span-2 px-3 py-2 rounded-lg text-[0.72rem] font-semibold border cursor-pointer transition-all",
+                    editingLink.mode === 'custom'
+                      ? "bg-primary/15 text-primary border-primary/40"
+                      : "bg-transparent text-muted-foreground border-white/10 hover:text-foreground hover:border-white/20"
+                  )}
+                >Personnalisé</button>
+              </div>
+              {editingLink.mode === 'custom' && (
+                <input
+                  type="datetime-local"
+                  value={toDatetimeLocal(editingLink.expiresAt)}
+                  onChange={e => setEditingLink({ ...editingLink, expiresAt: e.target.value ? new Date(e.target.value).getTime() : null })}
+                  className="w-full px-3 py-2 mb-2 bg-input border border-white/10 rounded-lg text-[0.8rem] text-foreground outline-none focus:border-primary/50"
+                />
+              )}
+
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => setEditingLink(null)}
+                  className="px-3 py-1.5 bg-transparent border border-white/10 rounded-lg text-[0.75rem] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >Annuler</button>
+                <button
+                  onClick={saveEditLink}
+                  className="px-3 py-1.5 bg-primary/15 text-primary border border-primary/30 rounded-lg text-[0.75rem] font-medium hover:bg-primary/25 transition-colors"
+                >Enregistrer</button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

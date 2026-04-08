@@ -15,6 +15,7 @@ export function useSupabaseData() {
   const [folders, setFolders] = useState([])
   const [attachments, setAttachments] = useState([])
   const [activityLog, setActivityLog] = useState([])
+  const [shareLinks, setShareLinks] = useState([])
   const [loading, setLoading] = useState(true)
   const lastProjectId = useRef(activeProjectId)
 
@@ -22,14 +23,14 @@ export function useSupabaseData() {
   const fetchAll = useCallback(async () => {
     if (!activeProjectId) {
       lastProjectId.current = null
-      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setFolders([]); setAttachments([]); setActivityLog([])
+      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setFolders([]); setAttachments([]); setActivityLog([]); setShareLinks([])
       setLoading(false)
       return
     }
     lastProjectId.current = activeProjectId
     setLoading(true)
 
-    const [listsRes, tasksRes, notesRes, kanbanBoardsRes, foldersRes, attachmentsRes, activityRes] = await Promise.all([
+    const [listsRes, tasksRes, notesRes, kanbanBoardsRes, foldersRes, attachmentsRes, activityRes, shareLinksRes] = await Promise.all([
       supabase.from('lists').select('*').eq('project_id', activeProjectId).order('position'),
       supabase.from('tasks').select('*, subtasks(*)').eq('project_id', activeProjectId).order('position'),
       supabase.from('notes').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }),
@@ -37,9 +38,10 @@ export function useSupabaseData() {
       supabase.from('folders').select('*').eq('project_id', activeProjectId).order('created_at'),
       supabase.from('attachments').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }),
       supabase.from('activity_log').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }).limit(100),
+      supabase.from('share_links').select('*').eq('project_id', activeProjectId).order('created_at', { ascending: false }),
     ])
 
-    setLists((listsRes.data || []).map(l => ({ id: l.id, name: l.name, folderId: l.folder_id || null, linkedNoteId: l.linked_note_id || null })))
+    setLists((listsRes.data || []).map(l => ({ id: l.id, name: l.name, color: l.color || null, folderId: l.folder_id || null, linkedNoteId: l.linked_note_id || null, kanbanStatus: l.kanban_status || null, kanbanBoardId: l.kanban_board_id || null, kanbanLabels: l.kanban_labels || [] })))
 
     setAllTodos((tasksRes.data || []).map(t => ({
       id: t.id, listId: t.list_id, text: t.text, status: t.status, priority: t.priority,
@@ -54,12 +56,14 @@ export function useSupabaseData() {
       id: n.id, title: n.title || '', content: n.content || '', color: n.color,
       pinned: n.pinned, starred: n.starred, folder: n.folder_id || null,
       kanbanStatus: n.kanban_status, kanbanBoardId: n.kanban_board_id,
+      kanbanLabels: n.kanban_labels || [],
       createdAt: new Date(n.created_at).getTime(),
       updatedAt: new Date(n.updated_at).getTime(),
     })))
 
     setKanbanBoards((kanbanBoardsRes.data || []).map(b => ({
       id: b.id, name: b.name, columns: b.columns || [],
+      labels: b.labels || [],
       folderId: b.folder_id || null,
       position: b.position, createdAt: new Date(b.created_at).getTime(),
       updatedAt: new Date(b.updated_at).getTime(),
@@ -80,6 +84,14 @@ export function useSupabaseData() {
       timestamp: new Date(a.created_at).getTime(),
     })))
 
+    setShareLinks((shareLinksRes.data || []).map(s => ({
+      id: s.id, itemType: s.item_type, itemId: s.item_id, token: s.token,
+      isActive: s.is_active, label: s.label || null,
+      expiresAt: s.expires_at ? new Date(s.expires_at).getTime() : null,
+      createdAt: s.created_at ? new Date(s.created_at).getTime() : null,
+      createdBy: s.created_by,
+    })))
+
     setLoading(false)
   }, [activeProjectId])
 
@@ -88,7 +100,7 @@ export function useSupabaseData() {
   useEffect(() => {
     if (!user) {
       lastProjectId.current = null
-      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setFolders([]); setAttachments([]); setActivityLog([])
+      setLists([]); setAllTodos([]); setNotes([]); setKanbanBoards([]); setFolders([]); setAttachments([]); setActivityLog([]); setShareLinks([])
       setLoading(false)
     }
   }, [user])
@@ -127,7 +139,7 @@ export function useSupabaseData() {
       project_id: activeProjectId, name, folder_id: folderId, position: lists.length,
     }).select().single()
     if (error) { console.error('addList failed:', error); return null }
-    setLists(prev => [...prev, { id: data.id, name: data.name, folderId: data.folder_id || null, linkedNoteId: data.linked_note_id || null }])
+    setLists(prev => [...prev, { id: data.id, name: data.name, color: data.color || null, folderId: data.folder_id || null, linkedNoteId: data.linked_note_id || null, kanbanStatus: data.kanban_status || null, kanbanBoardId: data.kanban_board_id || null }])
     return data
   }, [activeProjectId, lists.length])
 
@@ -135,6 +147,10 @@ export function useSupabaseData() {
     const dbUpdates = {}
     if (updates.name !== undefined) dbUpdates.name = updates.name
     if (updates.linkedNoteId !== undefined) dbUpdates.linked_note_id = updates.linkedNoteId
+    if (updates.kanbanStatus !== undefined) dbUpdates.kanban_status = updates.kanbanStatus
+    if (updates.kanbanBoardId !== undefined) dbUpdates.kanban_board_id = updates.kanbanBoardId
+    if (updates.kanbanLabels !== undefined) dbUpdates.kanban_labels = updates.kanbanLabels
+    if (updates.color !== undefined) dbUpdates.color = updates.color
     setLists(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
     const { error } = await supabase.from('lists').update(dbUpdates).eq('id', id)
     if (error) { console.error('updateList failed:', error); fetchAll() }
@@ -256,6 +272,7 @@ export function useSupabaseData() {
     if (updates.starred !== undefined) dbUpdates.starred = updates.starred
     if (updates.kanbanStatus !== undefined) dbUpdates.kanban_status = updates.kanbanStatus
     if (updates.kanbanBoardId !== undefined) dbUpdates.kanban_board_id = updates.kanbanBoardId
+    if (updates.kanbanLabels !== undefined) dbUpdates.kanban_labels = updates.kanbanLabels
     if (updates.folder !== undefined) dbUpdates.folder_id = updates.folder
     setNotes(prev => prev.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n))
     const { error } = await supabase.from('notes').update(dbUpdates).eq('id', id)
@@ -289,6 +306,7 @@ export function useSupabaseData() {
     const dbUpdates = {}
     if (updates.name !== undefined) dbUpdates.name = updates.name
     if (updates.columns !== undefined) dbUpdates.columns = updates.columns
+    if (updates.labels !== undefined) dbUpdates.labels = updates.labels
     if (updates.position !== undefined) dbUpdates.position = updates.position
     dbUpdates.updated_at = new Date().toISOString()
     setKanbanBoards(prev => prev.map(b => b.id === id ? { ...b, ...updates, updatedAt: Date.now() } : b))
@@ -324,6 +342,14 @@ export function useSupabaseData() {
     }
     const { error } = await supabase.from('folders').delete().eq('id', id)
     if (error) { console.error('deleteFolder failed:', error); fetchAll() }
+  }, [fetchAll])
+
+  const updateFolder = useCallback(async (id, updates) => {
+    const dbUpdates = {}
+    if (updates.name !== undefined) dbUpdates.name = updates.name
+    setFolders(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f))
+    const { error } = await supabase.from('folders').update(dbUpdates).eq('id', id)
+    if (error) { console.error('updateFolder failed:', error); fetchAll() }
   }, [fetchAll])
 
   // ======== ATTACHMENTS ========
@@ -393,18 +419,70 @@ export function useSupabaseData() {
   }, [activeProjectId])
 
   // ======== SHARE LINKS ========
-  const createShareLink = useCallback(async (itemType, itemId) => {
+  // opts: { ttlDays?: number, expiresAt?: Date|string|null, label?: string }
+  const createShareLink = useCallback(async (itemType, itemId, opts = {}) => {
     if (!activeProjectId || !user) return null
     const arr = new Uint8Array(32)
     crypto.getRandomValues(arr)
     const token = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('')
-    const { error } = await supabase.from('share_links').insert({
+    let expiresAt = null
+    if (opts.expiresAt) {
+      expiresAt = opts.expiresAt instanceof Date ? opts.expiresAt.toISOString() : new Date(opts.expiresAt).toISOString()
+    } else if (typeof opts.ttlDays === 'number' && opts.ttlDays > 0) {
+      expiresAt = new Date(Date.now() + opts.ttlDays * 86400000).toISOString()
+    }
+    const { data, error } = await supabase.from('share_links').insert({
       project_id: activeProjectId, item_type: itemType, item_id: itemId,
       token, created_by: user.id, is_active: true,
-    })
+      expires_at: expiresAt, label: opts.label?.trim() || null,
+    }).select().single()
     if (error) { console.error('createShareLink failed:', error); return null }
+    setShareLinks(prev => [{
+      id: data.id, itemType: data.item_type, itemId: data.item_id, token: data.token,
+      isActive: data.is_active, label: data.label || null,
+      expiresAt: data.expires_at ? new Date(data.expires_at).getTime() : null,
+      createdAt: data.created_at ? new Date(data.created_at).getTime() : null,
+      createdBy: data.created_by,
+    }, ...prev])
     return token
   }, [activeProjectId, user])
+
+  const revokeShareLink = useCallback(async (id) => {
+    setShareLinks(prev => prev.map(s => s.id === id ? { ...s, isActive: false } : s))
+    const { error } = await supabase.from('share_links').update({ is_active: false }).eq('id', id)
+    if (error) { console.error('revokeShareLink failed:', error); fetchAll() }
+  }, [fetchAll])
+
+  const reactivateShareLink = useCallback(async (id) => {
+    setShareLinks(prev => prev.map(s => s.id === id ? { ...s, isActive: true } : s))
+    const { error } = await supabase.from('share_links').update({ is_active: true }).eq('id', id)
+    if (error) { console.error('reactivateShareLink failed:', error); fetchAll() }
+  }, [fetchAll])
+
+  const deleteShareLink = useCallback(async (id) => {
+    setShareLinks(prev => prev.filter(s => s.id !== id))
+    const { error } = await supabase.from('share_links').delete().eq('id', id)
+    if (error) { console.error('deleteShareLink failed:', error); fetchAll() }
+  }, [fetchAll])
+
+  const updateShareLink = useCallback(async (id, updates) => {
+    const dbUpdates = {}
+    if (updates.label !== undefined) dbUpdates.label = updates.label?.trim() || null
+    if (updates.expiresAt !== undefined) {
+      dbUpdates.expires_at = updates.expiresAt
+        ? (updates.expiresAt instanceof Date ? updates.expiresAt.toISOString() : new Date(updates.expiresAt).toISOString())
+        : null
+    }
+    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive
+    setShareLinks(prev => prev.map(s => s.id === id ? {
+      ...s,
+      ...(updates.label !== undefined ? { label: updates.label?.trim() || null } : {}),
+      ...(updates.expiresAt !== undefined ? { expiresAt: updates.expiresAt ? new Date(updates.expiresAt).getTime() : null } : {}),
+      ...(updates.isActive !== undefined ? { isActive: updates.isActive } : {}),
+    } : s))
+    const { error } = await supabase.from('share_links').update(dbUpdates).eq('id', id)
+    if (error) { console.error('updateShareLink failed:', error); fetchAll() }
+  }, [fetchAll])
 
   return {
     lists, allTodos, notes, kanbanBoards, folders, attachments, activityLog, loading,
@@ -413,9 +491,10 @@ export function useSupabaseData() {
     addSubtask, updateSubtask, deleteSubtask,
     addNote, updateNote, deleteNote, setNotes,
     addKanbanBoard, updateKanbanBoard, deleteKanbanBoard,
-    addFolder, deleteFolder, setFolders,
+    addFolder, deleteFolder, updateFolder, setFolders,
     uploadAttachment, deleteAttachment, getAttachmentUrl, totalStorageUsed,
-    logActivity, clearOldActivity, createShareLink,
+    logActivity, clearOldActivity,
+    shareLinks, createShareLink, revokeShareLink, reactivateShareLink, deleteShareLink, updateShareLink,
     refreshAll: fetchAll,
   }
 }

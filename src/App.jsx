@@ -49,9 +49,10 @@ function App() {
     addSubtask, updateSubtask, deleteSubtask,
     addNote, updateNote, deleteNote,
     addKanbanBoard, updateKanbanBoard, deleteKanbanBoard,
-    addFolder, deleteFolder,
+    addFolder, deleteFolder, updateFolder,
     uploadAttachment, deleteAttachment, getAttachmentUrl, totalStorageUsed,
     logActivity, clearOldActivity, createShareLink,
+    shareLinks, revokeShareLink, reactivateShareLink, deleteShareLink, updateShareLink,
   } = useSupabaseData()
   const { tab: activeTab, notFound, listId: urlListId, taskId: urlTaskId, boardId: urlBoardId, noteId: urlNoteId, folderId: urlFolderId, apiSection: urlApiSection, json: jsonMode, goTo, replaceTo } = useAppRouter()
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark')
@@ -658,7 +659,7 @@ function App() {
             getAttachmentUrl={getAttachmentUrl} totalStorageUsed={totalStorageUsed}
             createShareLink={createShareLink} logActivity={logActivity}
             todoFolders={folders.filter(f => f.type === 'list')} setTodoFolders={setFolders}
-            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder}
+            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder} dbUpdateFolder={updateFolder}
             urlListId={activeTab === 'todos' ? urlListId : undefined}
             urlTaskId={activeTab === 'todos' ? urlTaskId : undefined}
             onNavigate={(params) => replaceTo('todos', params)}
@@ -668,22 +669,23 @@ function App() {
         <div className={cn("flex-1 flex flex-col overflow-hidden", activeTab !== 'kanban' && "hidden")}>
           <ErrorBoundary>
           <KanbanBoard lists={lists} allTodos={allTodos} setAllTodos={setAllTodos} notes={notes} setNotes={setNotes} showToast={showToast}
-            dbUpdateTodo={updateTodo} dbAddTodo={addTodo} dbDeleteTodo={deleteTodo} dbUpdateNote={updateNote} dbAddNote={addNote} dbDeleteNote={deleteNote}
+            dbUpdateTodo={updateTodo} dbAddTodo={addTodo} dbDeleteTodo={deleteTodo} dbUpdateNote={updateNote} dbAddNote={addNote} dbDeleteNote={deleteNote} dbUpdateList={updateList}
             kanbanBoards={kanbanBoards}
             kanbanFolders={folders.filter(f => f.type === 'kanban')} setKanbanFolders={setFolders}
-            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder}
+            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder} dbUpdateFolder={updateFolder}
             dbAddKanbanBoard={addKanbanBoard} dbUpdateKanbanBoard={updateKanbanBoard} dbDeleteKanbanBoard={deleteKanbanBoard}
             createShareLink={createShareLink} logActivity={logActivity}
             urlBoardId={activeTab === 'kanban' ? urlBoardId : undefined}
             onNavigate={(params) => replaceTo('kanban', params)}
-            showUpgradeModal={(reason) => setUpgradeReason(reason)} />
+            showUpgradeModal={(reason) => setUpgradeReason(reason)}
+            goTo={goTo} />
           </ErrorBoundary>
         </div>
         <div className={cn("flex-1 flex flex-col overflow-hidden", activeTab !== 'notes' && "hidden")}>
           <ErrorBoundary>
           <Notes notes={notes} setNotes={setNotes}
             folders={folders.filter(f => f.type === 'note')} setFolders={setFolders}
-            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder}
+            dbAddFolder={addFolder} dbDeleteFolder={deleteFolder} dbUpdateFolder={updateFolder}
             lists={lists} setLists={setLists} allTodos={allTodos} setAllTodos={setAllTodos}
             dbAddNote={addNote} dbUpdateNote={updateNote} dbDeleteNote={deleteNote} dbUpdateTodo={updateTodo} dbUpdateList={updateList}
             logActivity={logActivity} createShareLink={createShareLink}
@@ -700,7 +702,17 @@ function App() {
           <ErrorBoundary>
             {viewingSharedItem
               ? <SharedItemView item={viewingSharedItem} onBack={() => setViewingSharedItem(null)} />
-              : <SharedWithMe onOpenProject={() => goTo('todos')} onOpenSharedItem={(item) => setViewingSharedItem(item)} />
+              : <SharedWithMe
+                  onOpenProject={() => goTo('todos')}
+                  onOpenSharedItem={(item) => setViewingSharedItem(item)}
+                  shareLinks={shareLinks}
+                  notes={notes} lists={lists} kanbanBoards={kanbanBoards}
+                  revokeShareLink={revokeShareLink}
+                  reactivateShareLink={reactivateShareLink}
+                  deleteShareLink={deleteShareLink}
+                  updateShareLink={updateShareLink}
+                  showToast={showToast}
+                />
             }
           </ErrorBoundary>
         )}
@@ -1057,7 +1069,7 @@ function App() {
                       </div>
                       <p className="text-sm font-semibold text-white/50 mb-1">Recherche instantanée</p>
                       <p className="text-xs text-white/20">Tâches, notes, pièces jointes — tout en un seul endroit</p>
-                      <div className="flex items-center gap-2 mt-4 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+                      <div className="hidden md:flex items-center gap-2 mt-4 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
                         <kbd className="text-[0.6rem] font-mono text-violet-400/60 font-semibold">Ctrl</kbd>
                         <span className="text-white/15 text-xs">+</span>
                         <kbd className="text-[0.6rem] font-mono text-violet-400/60 font-semibold">Shift</kbd>
@@ -1132,7 +1144,7 @@ function App() {
               {/* Footer */}
               <div className="relative">
                 <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
-                <div className="flex items-center justify-between px-4 py-2.5 text-[0.6rem] text-white/20">
+                <div className="hidden md:flex items-center justify-between px-4 py-2.5 text-[0.6rem] text-white/20">
                   <div className="flex items-center gap-3">
                     <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-white/[0.04] font-mono text-white/30">↑</kbd><kbd className="px-1 py-0.5 rounded bg-white/[0.04] font-mono text-white/30">↓</kbd> naviguer</span>
                     <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-white/[0.04] font-mono text-white/30">↵</kbd> ouvrir</span>

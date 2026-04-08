@@ -4,7 +4,7 @@ import {
   Bold, Italic, Underline, Strikethrough, Heading1, Heading2, List, ListOrdered, Link2,
   AlignLeft, AlignCenter, AlignRight, Type, Palette, Highlighter, Undo2, Redo2, Share2, ExternalLink,
   X, FolderPlus, Folder, FileText, Copy, Star, StarOff, Move,
-  Check, CheckSquare, Link, ChevronRight, Paperclip, File, Image, Upload
+  Check, CheckSquare, Link, ChevronRight, Paperclip, File, Image, Upload, MoreHorizontal
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useProject } from '../contexts/ProjectContext'
@@ -65,7 +65,7 @@ function getFileIcon(fileType) {
 }
 
 function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos, setAllTodos, logActivity,
-  dbAddNote, dbUpdateNote, dbDeleteNote, dbUpdateTodo, dbUpdateList, dbAddFolder, dbDeleteFolder,
+  dbAddNote, dbUpdateNote, dbDeleteNote, dbUpdateTodo, dbUpdateList, dbAddFolder, dbDeleteFolder, dbUpdateFolder,
   createShareLink,
   attachments = [], uploadAttachment, deleteAttachment, getAttachmentUrl, totalStorageUsed = 0,
   urlNoteId, urlFolderId, onNavigate, showUpgradeModal }) {
@@ -90,6 +90,11 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
   const [uploading, setUploading] = useState(false)
   const [showTextColor, setShowTextColor] = useState(false)
   const [showHighlight, setShowHighlight] = useState(false)
+  const [linkDialog, setLinkDialog] = useState(null) // { url, text } when open
+  const [cardMenu, setCardMenu] = useState(null) // note id when 3-dot menu open
+  const [folderMenu, setFolderMenu] = useState(null) // folder id when 3-dot menu open
+  const [editingFolderId, setEditingFolderId] = useState(null)
+  const [editFolderName, setEditFolderName] = useState('')
   const editorRef = useRef(null)
   const titleRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -192,6 +197,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
   const updateNote = (id, updates) => { if (!canEdit) return; setNotes(notes.map(n => n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n)); if (dbUpdateNote) dbUpdateNote(id, updates) }
   const deleteNote = (id) => { if (!canEdit) return; const n = notes.find(x => x.id === id); if (dbDeleteNote) dbDeleteNote(id); else setNotes(notes.filter(x => x.id !== id)); if (selectedNote === id) { setSelectedNote(null); setViewMode('browser') }; logActivity('note_delete', `Note "${n?.title || 'Sans titre'}" supprimee`) }
   const renameNoteBrowser = (id) => { if (!canEdit) return; if (editNoteName.trim()) updateNote(id, { title: editNoteName.trim() }); setEditingNoteId(null) }
+  const renameFolderBrowser = (id) => { if (!canEdit) return; if (editFolderName.trim() && dbUpdateFolder) dbUpdateFolder(id, { name: editFolderName.trim() }); setEditingFolderId(null) }
   const duplicateNote = (note) => { if (!canEdit) return; if (dbAddNote) { dbAddNote({ title: `${note.title} (copie)`, content: note.content, color: note.color, folder: note.folder, pinned: false, starred: false }) } else { const now = Date.now(); setNotes([{ ...note, id: now, title: `${note.title} (copie)`, createdAt: now, updatedAt: now }, ...notes]) } }
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showSharePopup, setShowSharePopup] = useState(false)
@@ -549,6 +555,32 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
     document.execCommand(command, false, value)
     debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
   }
+  // Normalize a user-typed URL: add https:// if no scheme, allow mailto: and relative paths
+  const normalizeUrl = (raw) => {
+    const url = (raw || '').trim()
+    if (!url) return ''
+    if (/^(https?:|mailto:|\/)/i.test(url)) return url
+    return `https://${url}`
+  }
+  // Escape HTML so user-typed text can be safely inserted via insertHTML
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+  // Insert a link at the current selection. If `text` is provided, use it as the display label.
+  const insertLink = (rawUrl, text) => {
+    const url = normalizeUrl(rawUrl)
+    if (!url) return
+    restoreSelection()
+    editorRef.current?.focus()
+    const label = (text && text.trim()) || url
+    const html = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Ctrl+clic pour ouvrir">${escapeHtml(label)}</a>`
+    document.execCommand('insertHTML', false, html)
+    debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
+  }
+  // Open the link dialog, prefilling the "text" field with the current selection if any
+  const openLinkDialog = () => {
+    saveSelection()
+    const selectedText = savedSelectionRef.current ? savedSelectionRef.current.toString() : ''
+    setLinkDialog({ url: '', text: selectedText })
+  }
   // Wrap current selection with a span carrying an inline style (font-size, font-family, ...)
   const applyInlineStyle = (styleProp, value) => {
     restoreSelection()
@@ -609,8 +641,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
     if (e.ctrlKey && e.key === 'u') { e.preventDefault(); execFormat('underline') }
     if (e.ctrlKey && e.key === 'k') {
       e.preventDefault()
-      const url = prompt('URL du lien :')
-      if (url) execFormat('createLink', url)
+      openLinkDialog()
     }
     if (e.key === 'Tab') {
       e.preventDefault()
@@ -619,6 +650,16 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
   }
   const handleEditorInput = () => {
     debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
+  }
+  // Make links clickable inside the contentEditable: Ctrl/Cmd+click opens in a new tab
+  const handleEditorClick = (e) => {
+    const a = e.target.closest?.('a')
+    if (!a) return
+    if (!canEdit || e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      const href = a.getAttribute('href')
+      if (href && href !== '#') window.open(href, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const addFolder = async () => { if (!canEdit) return; if (!newFolderName.trim()) return; if (dbAddFolder) { await dbAddFolder(newFolderName.trim(), 'note') } else { setFolders([...folders, { id: `folder-${Date.now()}`, name: newFolderName.trim() }]) }; setNewFolderName(''); setShowNewFolder(false) }
@@ -745,10 +786,31 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                       {selected && <Check size={12} className="text-white" />}
                     </div>
                   )}
-                  <span className="text-sm font-semibold text-center">{f.name}</span>
+                  {editingFolderId === f.id ? (
+                    <input className="w-full text-center px-2 py-1 bg-input border border-warning rounded-lg text-foreground text-sm outline-none" value={editFolderName} onChange={e => setEditFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') renameFolderBrowser(f.id); if (e.key === 'Escape') setEditingFolderId(null) }} onBlur={() => renameFolderBrowser(f.id)} onClick={e => e.stopPropagation()} autoFocus />
+                  ) : (
+                    <span className="text-sm font-semibold text-center">{f.name}</span>
+                  )}
                   <span className="text-xs text-muted-foreground counter-animate">{count} note{count !== 1 ? 's' : ''}</span>
                   {isOver && <span className="text-[0.6rem] text-warning font-semibold">Déposer ici</span>}
-                  <button className="absolute top-3 right-3 flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-all duration-150 hover:text-destructive hover:bg-destructive/10" onClick={e => { e.stopPropagation(); deleteFolder(f.id) }}><Trash2 size={13} /></button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
+                    <div className="relative">
+                      <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-foreground hover:bg-white/[0.08] transition-colors duration-150" onClick={e => { e.stopPropagation(); setFolderMenu(folderMenu === f.id ? null : f.id) }}><MoreHorizontal size={15} /></button>
+                      {folderMenu === f.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setFolderMenu(null) }} />
+                          <div className="absolute right-0 top-full mt-1 w-40 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                            <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-muted-foreground cursor-pointer hover:bg-white/[0.06] hover:text-foreground transition-colors text-left" onClick={e => { e.stopPropagation(); setEditingFolderId(f.id); setEditFolderName(f.name); setFolderMenu(null) }}>
+                              <Type size={14} /> Renommer
+                            </button>
+                            <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-destructive cursor-pointer hover:bg-destructive/10 transition-colors text-left" onClick={e => { e.stopPropagation(); deleteFolder(f.id); setFolderMenu(null) }}>
+                              <Trash2 size={14} /> Supprimer
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -782,7 +844,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 {editingNoteId === note.id ? (
                   <input className="w-full text-center px-2 py-1 bg-input border border-violet-500 rounded-lg text-foreground text-sm outline-none focus:shadow-[0_0_20px_rgba(139,92,246,0.15)]" value={editNoteName} onChange={e => setEditNoteName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') renameNoteBrowser(note.id); if (e.key === 'Escape') setEditingNoteId(null) }} onBlur={() => renameNoteBrowser(note.id)} onClick={e => e.stopPropagation()} autoFocus />
                 ) : (
-                  <span className="text-sm font-semibold text-center" style={{ color: note.color }} onDoubleClick={e => { e.stopPropagation(); setEditingNoteId(note.id); setEditNoteName(note.title) }}>{note.title || 'Sans titre'}</span>
+                  <span className="text-sm font-semibold text-center" style={{ color: note.color }}>{note.title || 'Sans titre'}</span>
                 )}
                 <span className="text-xs text-muted-foreground">{new Date(note.updatedAt).toLocaleDateString('fr-FR')}</span>
                 {(() => { const lt = allTodos.filter(t => t.linkedNoteId === note.id).length; const ll = lists.filter(l => l.linkedNoteId === note.id).length; return (lt > 0 || ll > 0) ? (
@@ -792,8 +854,32 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                   </div>
                 ) : null })()}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 max-md:opacity-100 transition-opacity duration-150 absolute top-3 right-3">
-                  <ShareButton itemType="note" itemId={note.id} createShareLink={createShareLink} />
-                  <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-destructive hover:bg-destructive/10 transition-colors duration-150" onClick={e => { e.stopPropagation(); deleteNote(note.id) }}><Trash2 size={13} /></button>
+                  <div className="relative">
+                    <button className="flex bg-transparent border-none text-muted-foreground/40 cursor-pointer p-1.5 rounded-lg hover:text-foreground hover:bg-white/[0.08] transition-colors duration-150" onClick={e => { e.stopPropagation(); setCardMenu(cardMenu === note.id ? null : note.id) }}><MoreHorizontal size={15} /></button>
+                    {cardMenu === note.id && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setCardMenu(null) }} />
+                        <div className="absolute right-0 top-full mt-1 w-44 bg-card/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden z-50 py-1" style={{ boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                          <div className="px-3 py-2">
+                            <span className="text-[0.65rem] font-semibold text-muted-foreground/60 uppercase tracking-wider">Couleur</span>
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {COLORS.map(c => (
+                                <button key={c} className={cn("w-5 h-5 rounded-full border-2 transition-all duration-150 hover:scale-110", note.color === c ? "border-white scale-110" : "border-transparent")} style={{ background: c }} onClick={e => { e.stopPropagation(); if (dbUpdateNote) dbUpdateNote(note.id, { color: c }); setNotes(prev => prev.map(n => n.id === note.id ? { ...n, color: c } : n)); setCardMenu(null) }} />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="h-px bg-white/10 my-1" />
+                          <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-muted-foreground cursor-pointer hover:bg-white/[0.06] hover:text-foreground transition-colors text-left" onClick={e => { e.stopPropagation(); setEditingNoteId(note.id); setEditNoteName(note.title); setCardMenu(null) }}>
+                            <Type size={14} /> Renommer
+                          </button>
+                          <ShareButton itemType="note" itemId={note.id} createShareLink={createShareLink} className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-muted-foreground cursor-pointer hover:bg-white/[0.06] hover:text-foreground transition-colors text-left" />
+                          <button className="w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none text-sm text-destructive cursor-pointer hover:bg-destructive/10 transition-colors text-left" onClick={e => { e.stopPropagation(); deleteNote(note.id); setCardMenu(null) }}>
+                            <Trash2 size={14} /> Supprimer
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
               )
@@ -1044,7 +1130,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
               <div className="w-px h-5 bg-white/10 mx-1" />
 
               {/* Link / Remove format */}
-              <button onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => { const u = prompt('URL du lien :'); if (u) execFormat('createLink', u) }} title="Insérer un lien" className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted-foreground cursor-pointer rounded transition-all hover:bg-accent hover:text-foreground"><Link2 size={14} /></button>
+              <button onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={openLinkDialog} title="Insérer un lien" className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted-foreground cursor-pointer rounded transition-all hover:bg-accent hover:text-foreground"><Link2 size={14} /></button>
               <button onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => execFormat('removeFormat')} title="Effacer le formatage" className="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted-foreground cursor-pointer rounded transition-all hover:bg-accent hover:text-foreground"><X size={14} /></button>
 
               <div className="w-px h-5 bg-white/10 mx-1" />
@@ -1179,6 +1265,49 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
               </div>
             )}
 
+            {linkDialog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setLinkDialog(null)}>
+                <div className="bg-card border border-white/10 rounded-xl shadow-2xl p-5 w-[min(92vw,360px)]" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-2 mb-3 text-foreground">
+                    <Link2 size={14} className="text-primary" />
+                    <span className="text-sm font-semibold">Insérer un lien</span>
+                  </div>
+                  <label className="block text-[0.7rem] text-muted-foreground mb-1">Texte affiché (optionnel)</label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={linkDialog.text}
+                    onChange={e => setLinkDialog({ ...linkDialog, text: e.target.value })}
+                    placeholder="Texte du lien"
+                    className="w-full px-3 py-2 mb-3 bg-input border border-white/10 rounded-lg text-[0.8rem] text-foreground outline-none focus:border-primary/50"
+                  />
+                  <label className="block text-[0.7rem] text-muted-foreground mb-1">URL</label>
+                  <input
+                    type="text"
+                    value={linkDialog.url}
+                    onChange={e => setLinkDialog({ ...linkDialog, url: e.target.value })}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); if (linkDialog.url.trim()) { insertLink(linkDialog.url, linkDialog.text); setLinkDialog(null) } }
+                      if (e.key === 'Escape') { e.preventDefault(); setLinkDialog(null) }
+                    }}
+                    placeholder="https://exemple.com"
+                    className="w-full px-3 py-2 mb-4 bg-input border border-white/10 rounded-lg text-[0.8rem] text-foreground outline-none focus:border-primary/50"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setLinkDialog(null)}
+                      className="px-3 py-1.5 bg-transparent border border-white/10 rounded-lg text-[0.75rem] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    >Annuler</button>
+                    <button
+                      onClick={() => { if (linkDialog.url.trim()) { insertLink(linkDialog.url, linkDialog.text); setLinkDialog(null) } }}
+                      disabled={!linkDialog.url.trim()}
+                      className="px-3 py-1.5 bg-primary/15 text-primary border border-primary/30 rounded-lg text-[0.75rem] font-medium hover:bg-primary/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >Insérer</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 flex overflow-hidden">
               <div
                 ref={editorRef}
@@ -1186,8 +1315,9 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 suppressContentEditableWarning
                 onInput={handleEditorInput}
                 onKeyDown={handleEditorKeyDown}
+                onClick={handleEditorClick}
                 data-placeholder="Commencez a ecrire..."
-                className="flex-1 bg-transparent text-[0.88rem] leading-[1.8] px-4 sm:px-6 py-4 sm:py-5 outline-none overflow-y-auto text-foreground empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/25 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:mt-4 [&>h1]:mb-2 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:mt-3 [&>h2]:mb-1.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:mt-2 [&>h3]:mb-1 [&>ul]:pl-5 [&>ul]:list-disc [&>ol]:pl-5 [&>ol]:list-decimal [&>blockquote]:border-l-2 [&>blockquote]:border-primary [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&_a]:text-primary [&_a]:underline"
+                className="flex-1 bg-transparent text-[0.88rem] leading-[1.8] px-4 sm:px-6 py-4 sm:py-5 outline-none overflow-y-auto text-foreground empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/25 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:mt-4 [&>h1]:mb-2 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:mt-3 [&>h2]:mb-1.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:mt-2 [&>h3]:mb-1 [&>ul]:pl-5 [&>ul]:list-disc [&>ol]:pl-5 [&>ol]:list-decimal [&>blockquote]:border-l-2 [&>blockquote]:border-primary [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&_a]:text-primary [&_a]:underline [&_a]:cursor-pointer hover:[&_a]:opacity-80"
               />
             </div>
 

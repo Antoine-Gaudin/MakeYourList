@@ -183,7 +183,7 @@ export default function InvitationsPage({ showUpgradeModal }) {
   return (
     <div className="flex-1 flex flex-col overflow-y-auto page-transition">
       {/* Header */}
-      <div className="px-10 pt-14 pb-8">
+      <div className="px-4 sm:px-10 pt-8 sm:pt-14 pb-5 sm:pb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-400 text-xs font-semibold mb-5">
           <Mail size={12} /> INVITATIONS & PARTAGE
         </div>
@@ -195,7 +195,7 @@ export default function InvitationsPage({ showUpgradeModal }) {
         </p>
       </div>
 
-      <div className="px-10 pb-10 flex-1 flex flex-col gap-10">
+      <div className="px-4 sm:px-10 pb-6 sm:pb-10 flex-1 flex flex-col gap-8 sm:gap-10">
 
         {/* ─── Section 1: Invitations reçues ─── */}
         {pendingInvitations && pendingInvitations.length > 0 && (
@@ -313,7 +313,7 @@ export default function InvitationsPage({ showUpgradeModal }) {
                   <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
                     <UserPlus size={12} /> Inviter un membre
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <div className="relative flex-1">
                       <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                       <input
@@ -325,21 +325,23 @@ export default function InvitationsPage({ showUpgradeModal }) {
                         className="w-full bg-input border border-border rounded-xl py-2.5 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary transition-colors"
                       />
                     </div>
-                    <select
-                      value={invRole}
-                      onChange={e => setInvRole(e.target.value)}
-                      className="bg-input border border-border rounded-xl px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer"
-                    >
-                      <option value="viewer">Lecteur</option>
-                      <option value="editor">Éditeur</option>
-                    </select>
-                    <button
-                      type="submit"
-                      disabled={invLoading || !invEmail.trim()}
-                      className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25 border-none rounded-xl px-4 py-2.5 text-sm font-semibold cursor-pointer hover:shadow-violet-500/40 hover:brightness-110 disabled:opacity-50 transition-all"
-                    >
-                      {invLoading ? <Loader2 size={14} className="animate-spin" /> : <><UserPlus size={14} /> Inviter</>}
-                    </button>
+                    <div className="flex gap-2">
+                      <select
+                        value={invRole}
+                        onChange={e => setInvRole(e.target.value)}
+                        className="bg-input border border-border rounded-xl px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer flex-1 sm:flex-none"
+                      >
+                        <option value="viewer">Lecteur</option>
+                        <option value="editor">Éditeur</option>
+                      </select>
+                      <button
+                        type="submit"
+                        disabled={invLoading || !invEmail.trim()}
+                        className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25 border-none rounded-xl px-4 py-2.5 text-sm font-semibold cursor-pointer hover:shadow-violet-500/40 hover:brightness-110 disabled:opacity-50 transition-all whitespace-nowrap"
+                      >
+                        {invLoading ? <Loader2 size={14} className="animate-spin" /> : <><UserPlus size={14} /> Inviter</>}
+                      </button>
+                    </div>
                   </div>
                   {invError && <p className="text-sm text-destructive mt-2">{invError}</p>}
                   {invSuccess && <p className="text-sm text-emerald-400 mt-2">{invSuccess}</p>}
@@ -357,7 +359,7 @@ export default function InvitationsPage({ showUpgradeModal }) {
             </h3>
             <div className="bg-card/60 backdrop-blur-sm border border-white/8 rounded-2xl p-5">
               <form onSubmit={handleShareItem} className="flex flex-col gap-4">
-                <div className="grid grid-cols-[1fr_2fr] gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-3">
                   {/* Type selector */}
                   <div>
                     <label className="text-[0.65rem] text-muted-foreground uppercase tracking-wider block mb-1.5">Type</label>
@@ -386,7 +388,7 @@ export default function InvitationsPage({ showUpgradeModal }) {
                     </select>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <div className="relative flex-1">
                     <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                     <input
@@ -398,21 +400,23 @@ export default function InvitationsPage({ showUpgradeModal }) {
                       className="w-full bg-input border border-border rounded-xl py-2.5 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary transition-colors"
                     />
                   </div>
-                  <select
-                    value={shareRole}
-                    onChange={e => setShareRole(e.target.value)}
-                    className="bg-input border border-border rounded-xl px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer"
-                  >
-                    <option value="viewer">Lecteur</option>
-                    <option value="editor">Éditeur</option>
-                  </select>
-                  <button
-                    type="submit"
-                    disabled={shareLoading || !shareEmail.trim() || !shareItemId}
-                    className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 border-none rounded-xl px-4 py-2.5 text-sm font-semibold cursor-pointer hover:shadow-blue-500/40 hover:brightness-110 disabled:opacity-50 transition-all"
-                  >
-                    {shareLoading ? <Loader2 size={14} className="animate-spin" /> : <><Send size={14} /> Partager</>}
-                  </button>
+                  <div className="flex gap-2">
+                    <select
+                      value={shareRole}
+                      onChange={e => setShareRole(e.target.value)}
+                      className="bg-input border border-border rounded-xl px-3 py-2.5 text-sm text-foreground outline-none cursor-pointer flex-1 sm:flex-none"
+                    >
+                      <option value="viewer">Lecteur</option>
+                      <option value="editor">Éditeur</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={shareLoading || !shareEmail.trim() || !shareItemId}
+                      className="flex items-center justify-center gap-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 border-none rounded-xl px-4 py-2.5 text-sm font-semibold cursor-pointer hover:shadow-blue-500/40 hover:brightness-110 disabled:opacity-50 transition-all whitespace-nowrap"
+                    >
+                      {shareLoading ? <Loader2 size={14} className="animate-spin" /> : <><Send size={14} /> Partager</>}
+                    </button>
+                  </div>
                 </div>
                 {shareError && <p className="text-sm text-destructive mt-1">{shareError}</p>}
                 {shareSuccess && <p className="text-sm text-emerald-400 mt-1">{shareSuccess}</p>}

@@ -13,6 +13,11 @@ export default function ShareButton({ itemType, itemId, createShareLink, classNa
   const [tab, setTab] = useState('user')
   const popupRef = useRef(null)
 
+  // Public link creation options
+  const [linkTtl, setLinkTtl] = useState('7d') // 1d | 7d | 30d | unlimited | custom
+  const [linkLabel, setLinkLabel] = useState('')
+  const [linkCustomDate, setLinkCustomDate] = useState('')
+
   // User sharing state
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('viewer')
@@ -57,7 +62,13 @@ export default function ShareButton({ itemType, itemId, createShareLink, classNa
 
   const handleGenerateLink = async () => {
     setLoading(true)
-    const token = await createShareLink(itemType, itemId)
+    const opts = { label: linkLabel }
+    if (linkTtl === '1d') opts.ttlDays = 1
+    else if (linkTtl === '7d') opts.ttlDays = 7
+    else if (linkTtl === '30d') opts.ttlDays = 30
+    else if (linkTtl === 'custom' && linkCustomDate) opts.expiresAt = new Date(linkCustomDate)
+    // 'unlimited' => no expiresAt
+    const token = await createShareLink(itemType, itemId, opts)
     if (token) {
       setShareUrl(`${window.location.origin}/share/${token}`)
     }
@@ -270,14 +281,60 @@ export default function ShareButton({ itemType, itemId, createShareLink, classNa
                     </p>
                   </>
                 ) : (
-                  <button
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-semibold cursor-pointer transition-all text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50"
-                    onClick={handleGenerateLink}
-                    disabled={loading}
-                  >
-                    {loading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Link2 size={12} />}
-                    Générer un lien public
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      value={linkLabel}
+                      onChange={e => setLinkLabel(e.target.value)}
+                      placeholder="Nom du lien (optionnel)"
+                      className="w-full px-2.5 py-1.5 bg-input border border-border rounded-lg text-xs text-foreground outline-none focus:border-primary/50 transition-colors"
+                    />
+                    <div className="text-[0.6rem] text-muted-foreground uppercase tracking-wider font-semibold">Durée de vie</div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {[
+                        { k: '1d', label: '24 h' },
+                        { k: '7d', label: '7 jours' },
+                        { k: '30d', label: '30 jours' },
+                        { k: 'unlimited', label: 'Illimité' },
+                      ].map(opt => (
+                        <button
+                          key={opt.k}
+                          onClick={() => setLinkTtl(opt.k)}
+                          className={cn(
+                            "px-2 py-1.5 rounded-lg text-[0.68rem] font-semibold border cursor-pointer transition-all",
+                            linkTtl === opt.k
+                              ? "bg-primary/15 text-primary border-primary/40"
+                              : "bg-transparent text-muted-foreground border-border hover:text-foreground hover:border-white/20"
+                          )}
+                        >{opt.label}</button>
+                      ))}
+                      <button
+                        onClick={() => setLinkTtl('custom')}
+                        className={cn(
+                          "col-span-2 px-2 py-1.5 rounded-lg text-[0.68rem] font-semibold border cursor-pointer transition-all",
+                          linkTtl === 'custom'
+                            ? "bg-primary/15 text-primary border-primary/40"
+                            : "bg-transparent text-muted-foreground border-border hover:text-foreground hover:border-white/20"
+                        )}
+                      >Personnalisé</button>
+                    </div>
+                    {linkTtl === 'custom' && (
+                      <input
+                        type="datetime-local"
+                        value={linkCustomDate}
+                        onChange={e => setLinkCustomDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-input border border-border rounded-lg text-xs text-foreground outline-none focus:border-primary/50"
+                      />
+                    )}
+                    <button
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border-none text-xs font-semibold cursor-pointer transition-all bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:brightness-110 disabled:opacity-50"
+                      onClick={handleGenerateLink}
+                      disabled={loading || (linkTtl === 'custom' && !linkCustomDate)}
+                    >
+                      {loading ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Link2 size={12} />}
+                      Générer le lien
+                    </button>
+                  </div>
                 )}
               </div>
             )}
