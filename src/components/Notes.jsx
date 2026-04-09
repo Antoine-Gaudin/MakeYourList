@@ -21,7 +21,14 @@ const isHtmlAttachment = (att) => {
   return ext === 'html' || ext === 'htm'
 }
 
-const COLORS = ['#8b5cf6', '#f87171', '#4ade80', '#facc15', '#60a5fa', '#c084fc', '#fb923c', '#2dd4bf']
+const COLORS = ['#8b5cf6', '#f87171', '#4ade80', '#facc15', '#60a5fa', '#c084fc', '#fb923c', '#2dd4bf', '__ink__']
+const resolveColor = (c) => {
+  if (c === '__ink__') {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--color-foreground').trim()
+    return v || (document.documentElement.getAttribute('data-theme') === 'light' ? '#0f0f1a' : '#ffffff')
+  }
+  return c
+}
 
 const NOTE_TEMPLATES = [
   { id: 'blank', name: 'Note vide', icon: '📄', content: '' },
@@ -660,6 +667,36 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
   const handleEditorInput = () => {
     debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
   }
+
+  const handlePaste = (e) => {
+    e.preventDefault()
+    const clipboardData = e.clipboardData || window.clipboardData
+    // Prefer HTML to keep bold/italic/links, but strip backgrounds
+    const html = clipboardData.getData('text/html')
+    if (html) {
+      const tmp = document.createElement('div')
+      tmp.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ['font'], ADD_ATTR: ['style', 'color'] })
+      // Walk all elements and remove background-related styles + color class tricks
+      tmp.querySelectorAll('*').forEach(el => {
+        if (el.style) {
+          el.style.removeProperty('background')
+          el.style.removeProperty('background-color')
+          el.style.removeProperty('backgroundColor')
+        }
+        // Remove class attributes that might carry dark-theme background classes
+        el.removeAttribute('class')
+        el.removeAttribute('data-highlight-color')
+        el.removeAttribute('data-background-color')
+      })
+      document.execCommand('insertHTML', false, tmp.innerHTML)
+    } else {
+      // Fallback: plain text
+      const text = clipboardData.getData('text/plain')
+      document.execCommand('insertText', false, text)
+    }
+    debouncedContentSave(selectedNote, editorRef.current?.innerHTML || '')
+  }
+
   // Make links clickable inside the contentEditable: Ctrl/Cmd+click opens in a new tab
   const handleEditorClick = (e) => {
     const a = e.target.closest?.('a')
@@ -873,7 +910,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                             <span className="text-[0.65rem] font-semibold text-muted-foreground/60 uppercase tracking-wider">Couleur</span>
                             <div className="flex flex-wrap gap-1.5 mt-1.5">
                               {COLORS.map(c => (
-                                <button key={c} className={cn("w-5 h-5 rounded-full border-2 transition-all duration-150 hover:scale-110", note.color === c ? "border-white scale-110" : "border-transparent")} style={{ background: c }} onClick={e => { e.stopPropagation(); if (dbUpdateNote) dbUpdateNote(note.id, { color: c }); setNotes(prev => prev.map(n => n.id === note.id ? { ...n, color: c } : n)); setCardMenu(null) }} />
+                                <button key={c} className={cn("w-5 h-5 rounded-full border-2 transition-all duration-150 hover:scale-110", note.color === c ? "border-white scale-110" : "border-transparent")} style={{ background: resolveColor(c) }} onClick={e => { e.stopPropagation(); if (dbUpdateNote) dbUpdateNote(note.id, { color: c }); setNotes(prev => prev.map(n => n.id === note.id ? { ...n, color: c } : n)); setCardMenu(null) }} />
                               ))}
                             </div>
                           </div>
@@ -984,7 +1021,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
               <div className="flex items-center gap-0.5 shrink-0 flex-wrap">
                 {COLORS.map(c => (
                   <button key={c} className={cn("w-4 h-4 rounded-full border-2 cursor-pointer transition-all duration-150 hover:scale-125", current.color === c ? "border-white scale-110" : "border-transparent")}
-                    style={{ background: c }} onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => { setWritingColor(c); updateNote(current.id, { color: c }) }} title="Couleur du texte" />
+                    style={{ background: resolveColor(c) }} onMouseDown={e => { e.preventDefault(); saveSelection() }} onClick={() => { setWritingColor(resolveColor(c)); updateNote(current.id, { color: c }) }} title="Couleur du texte" />
                 ))}
                 <div className="w-px h-4 bg-white/10 mx-1.5" />
                 <button className={cn("p-1.5 bg-transparent border-none cursor-pointer rounded-lg transition-all text-muted-foreground hover:text-warning", current.starred && "text-warning")} onClick={() => updateNote(current.id, { starred: !current.starred })} title="Favori">
@@ -1329,6 +1366,7 @@ function Notes({ notes, setNotes, folders, setFolders, lists, setLists, allTodos
                 suppressContentEditableWarning
                 onInput={handleEditorInput}
                 onKeyDown={handleEditorKeyDown}
+                onPaste={handlePaste}
                 onClick={handleEditorClick}
                 data-placeholder="Commencez a ecrire..."
                 className="flex-1 bg-transparent text-[0.88rem] leading-[1.8] px-4 sm:px-6 py-4 sm:py-5 outline-none overflow-y-auto text-foreground empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/25 [&>h1]:text-xl [&>h1]:font-bold [&>h1]:mt-4 [&>h1]:mb-2 [&>h2]:text-lg [&>h2]:font-bold [&>h2]:mt-3 [&>h2]:mb-1.5 [&>h3]:text-base [&>h3]:font-semibold [&>h3]:mt-2 [&>h3]:mb-1 [&>ul]:pl-5 [&>ul]:list-disc [&>ol]:pl-5 [&>ol]:list-decimal [&>blockquote]:border-l-2 [&>blockquote]:border-primary [&>blockquote]:pl-4 [&>blockquote]:italic [&>blockquote]:text-muted-foreground [&_a]:text-primary [&_a]:underline [&_a]:cursor-pointer hover:[&_a]:opacity-80"
